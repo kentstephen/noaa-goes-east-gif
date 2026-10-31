@@ -1,7 +1,8 @@
 # noaa-goes-east-gif
 
 GeoColor-style loops of the eastern United States from GOES-East (GOES-19), at night
-or from afternoon into night, built from NOAA's public bucket with no cloud compute
+or from afternoon into night, read straight from NOAA's public bucket with
+[VirtualiZarr](https://github.com/zarr-developers/VirtualiZarr), with no cloud compute
 and no credentials.
 
 - **Satellite data:** the ABI CONUS multiband files (`ABI-L2-MCMIPC`, every 5 minutes)
