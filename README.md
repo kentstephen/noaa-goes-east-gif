@@ -94,6 +94,13 @@ entirely with fill values), which would flash a whole frame. Each run checks for
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
 
+## When a run fails
+
+The published loop is replaced only after a run succeeds. If a run fails for any
+reason (too many bad frames, missing scans, a network error), it writes no video and
+the scheduled job leaves the published file alone, so the last good loop keeps
+playing until a later run succeeds.
+
 ## Notes
 
 - Pixels outside the GOES-East CONUS scan area are drawn black.
