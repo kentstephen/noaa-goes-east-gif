@@ -1,0 +1,116 @@
+# Once a month, upgrades the locked Python dependencies and keeps the upgrade only
+# if both hero loops still render with it.
+#
+# 1. `uv lock --upgrade` on a branch deps/uv-YYYY-MM, pushed so a failure can be
+#    looked at.
+# 2. Renders the desktop and mobile loops exactly as the daily job does, with the
+#    new lockfile. Nothing is uploaded to R2.
+# 3. If both renders pass, the commit goes onto main and the branch is deleted.
+#    If either fails, main keeps the old lockfile and the branch stays.
+#
+# The test videos are attached to the run as an artifact for a look.
+# Testing and merging happen in one job because a push or PR made with the run's
+# own token does not start other workflows.
+
+name: dependency upgrade
+
+on:
+  schedule:
+    # 15:00 UTC on the 1st, clear of the 12:30 UTC daily render.
+    - cron: "0 15 1 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: deps
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      LOOP: --seconds 8 --day-seconds 2 --workers 4 --label none
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Upgrade the lockfile
+        id: lock
+        run: |
+          if ! uv lock --upgrade 2> lock.log; then cat lock.log; exit 1; fi
+          cat lock.log
+          if git diff --quiet uv.lock; then
+            echo "Nothing to upgrade."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit to a branch
+        if: steps.lock.outputs.changed == 'true'
+        id: branch
+        run: |
+          br="deps/uv-$(date -u +%Y-%m)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$br"
+          git add uv.lock
+          {
+            echo "Upgrade locked dependencies"
+            echo
+            grep -E '^(Updated?|Added?|Removed?) ' lock.log || true
+          } > msg.txt
+          git commit -q -F msg.txt
+          git push -q -f origin "HEAD:refs/heads/$br"
+          echo "name=$br" >> "$GITHUB_OUTPUT"
+          git show --stat HEAD
+
+      - name: Install ffmpeg
+        if: steps.lock.outputs.changed == 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+
+      - name: Cache the Rayleigh tables
+        if: steps.lock.outputs.changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pyspectral
+          key: pyspectral-rayleigh-v1
+
+      - name: Test render desktop
+        if: steps.lock.outputs.changed == 'true'
+        run: >
+          uv run --locked -q geocolor_night.py $LOOP
+          --bbox=-113.41,23.44,-61.94,49.12
+          --out out/desktop
+
+      - name: Test render mobile
+        if: steps.lock.outputs.changed == 'true'
+        run: >
+          uv run --locked -q geocolor_night.py $LOOP
+          --bbox=-90.86,21.91,-69.25,50.35
+          --out out/mobile
+
+      - name: Keep the test videos
+        if: always() && steps.lock.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-render
+          path: |
+            out/*/east_night.mp4
+            out/*/report.json
+          retention-days: 30
+
+      - name: Merge into main
+        if: steps.lock.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          # Fast-forward only: if main moved during the test, this fails and the
+          # branch stays for a manual merge.
+          git push origin HEAD:main
+          git push origin --delete "$BRANCH"
+          echo "Merged $BRANCH into main."

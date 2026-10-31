@@ -38,8 +38,11 @@ October and about 5 hours at the June solstice.
 
 Needs [uv](https://docs.astral.sh/uv/) and `ffmpeg`. Dependencies are in
 `pyproject.toml`, pinned to exact versions in `uv.lock` (Python 3.12), and the daily
-job installs only what the lockfile says. To take newer versions on purpose:
-`uv lock --upgrade`, render a test loop, then commit the new `uv.lock`.
+job installs only what the lockfile says. On the 1st of each month,
+`.github/workflows/deps.yml` runs `uv lock --upgrade` on a branch, renders both loops
+with it, and merges into `main` only if both pass; a failed upgrade stays on its
+`deps/uv-YYYY-MM` branch. To upgrade by hand: `uv lock --upgrade`, render a test
+loop, then commit the new `uv.lock`.
 
 ```bash
 # The last full night, default box
