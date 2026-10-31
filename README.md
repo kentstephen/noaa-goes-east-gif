@@ -110,7 +110,7 @@ time stamp burned in:
 | Name | Box | Frame |
 |---|---|---|
 | `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia) | 1400 x 882 |
-| `hero-mobile` | `-90.52,23.44,-68.48,49.12` (Great Lakes to Florida) | 1400 x 2060 |
+| `hero-mobile` | `-90.86,21.91,-69.25,50.35` (Great Lakes to Florida) | 1400 x 2332 |
 
 Each uploads to a Cloudflare R2 bucket:
 

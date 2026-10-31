@@ -68,7 +68,7 @@ jobs:
         continue-on-error: true
         run: >
           uv run --locked -q geocolor_night.py $LOOP
-          --bbox=-90.52,23.44,-68.48,49.12
+          --bbox=-90.86,21.91,-69.25,50.35
           --out out/mobile
 
       - name: Make poster frames
