@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      LOOP: --seconds 8 --day-seconds 2 --workers 4
+      LOOP: --seconds 8 --day-seconds 2 --workers 4 --label none
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +55,6 @@ jobs:
         run: >
           uv run -q geocolor_night.py $LOOP
           --bbox=-90.52,23.44,-68.48,49.12
-          --label top-right --label-aspect 9:20
           --out out/mobile
 
       - name: Make poster frames

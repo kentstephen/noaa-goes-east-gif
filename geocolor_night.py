@@ -504,7 +504,8 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     rgb = compose(bands, lights, sza if lit else None, geom, when, red_ratio)
     rgb[~sampler.valid] = 0
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype("uint8"))
-    draw_label(im, when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z"), *label)
+    if label[0] != "none":
+        draw_label(im, when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z"), *label)
     return im, when
 
 
@@ -561,8 +562,8 @@ def main() -> None:
     ap.add_argument("--bbox", default=DEFAULT_BBOX, help="lon_min,lat_min,lon_max,lat_max")
     ap.add_argument("--width", type=int, default=1400, help="output width in pixels")
     ap.add_argument("--label", default="bottom-left",
-                    choices=["bottom-left", "bottom-right", "top-left", "top-right"],
-                    help="corner for the burned-in time")
+                    choices=["bottom-left", "bottom-right", "top-left", "top-right", "none"],
+                    help="corner for the burned-in time, or none")
     ap.add_argument("--label-aspect", default=None,
                     help="keep the time inside the centered crop of a viewport this shape, "
                          "W:H (e.g. 9:20 for a phone held upright)")

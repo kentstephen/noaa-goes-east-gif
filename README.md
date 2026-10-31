@@ -65,7 +65,7 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--every` | Minutes between frames (scans arrive every 5) |
 | `--afternoon H` | Start H hours before sunset first reaches the box, end at first light |
 | `--seconds`, `--day-seconds` | Fixed-length loop: this many seconds of daylight before sunset first reaches the box, then dusk and night for the rest |
-| `--label`, `--label-aspect` | Corner for the time stamp, and a viewport shape (W:H) whose centered crop it must stay inside |
+| `--label`, `--label-aspect` | Corner for the time stamp (or `none`), and a viewport shape (W:H) whose centered crop it must stay inside |
 | `--day-night`, `--hours` | Rolling window ending now, with the day layer |
 | `--no-hires` | Skip the 0.5 km red band detail |
 | `--fps` | Playback frames per second (default 11) |
@@ -102,12 +102,13 @@ frame, with the reason.
 ## Daily job
 
 `.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
-evening's loop has finished. It renders two 8 second loops of that evening:
+evening's loop has finished. It renders two 8 second loops of that evening, with no
+time stamp burned in:
 
-| Name | Box | Frame | Time stamp |
-|---|---|---|---|
-| `hero-desktop` | `-112.81,24.31,-66.47,47.11` (Arizona to Maine) | 1400 x 860 | bottom left |
-| `hero-mobile` | `-90.52,23.44,-68.48,49.12` (Great Lakes to Florida) | 1400 x 2060 | top right, inside a 9:20 phone crop |
+| Name | Box | Frame |
+|---|---|---|
+| `hero-desktop` | `-112.81,24.31,-66.47,47.11` (Arizona to Maine) | 1400 x 860 |
+| `hero-mobile` | `-90.52,23.44,-68.48,49.12` (Great Lakes to Florida) | 1400 x 2060 |
 
 Each uploads to a Cloudflare R2 bucket as `<name>.mp4` plus a `<name>.jpg` poster frame,
 overwriting the previous day's files, with a one hour cache lifetime. The bucket
