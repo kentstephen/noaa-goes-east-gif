@@ -1,10 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "virtualizarr[hdf]>=2.8", "obstore", "obspec-utils", "xarray", "zarr>=3",
-#   "h5netcdf", "numpy", "pyproj", "pillow", "scipy", "pyspectral", "pyorbital",
-# ]
-# ///
 """GeoColor-style loops of the eastern US from GOES-East (GOES-19).
 
 Reads the ABI CONUS multiband files (ABI-L2-MCMIPC) from NOAA's public bucket

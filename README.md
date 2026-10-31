@@ -36,8 +36,10 @@ October and about 5 hours at the June solstice.
 
 ## Usage
 
-Needs [uv](https://docs.astral.sh/uv/) and `ffmpeg`. Dependencies are declared inline
-in the script.
+Needs [uv](https://docs.astral.sh/uv/) and `ffmpeg`. Dependencies are in
+`pyproject.toml`, pinned to exact versions in `uv.lock` (Python 3.12), and the daily
+job installs only what the lockfile says. To take newer versions on purpose:
+`uv lock --upgrade`, render a test loop, then commit the new `uv.lock`.
 
 ```bash
 # The last full night, default box

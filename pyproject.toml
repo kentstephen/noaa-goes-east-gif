@@ -1,0 +1,23 @@
+[project]
+name = "noaa-goes-east-gif"
+version = "0.1.0"
+description = "GeoColor-style GOES-East loops read from NOAA's public bucket with VirtualiZarr"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "virtualizarr[hdf]>=2.8",
+    "obstore",
+    "obspec-utils",
+    "xarray",
+    "zarr>=3",
+    "h5netcdf",
+    "numpy",
+    "pyproj",
+    "pillow",
+    "scipy",
+    "pyspectral",
+    "pyorbital",
+]
+
+[tool.uv]
+package = false

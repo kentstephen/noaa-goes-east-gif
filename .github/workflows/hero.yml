@@ -54,7 +54,7 @@ jobs:
         if: inputs.restore == ''
         continue-on-error: true
         run: >
-          uv run -q geocolor_night.py $LOOP
+          uv run --locked -q geocolor_night.py $LOOP
           --bbox=-113.41,23.44,-61.94,49.12
           --out out/desktop
 
@@ -63,7 +63,7 @@ jobs:
         if: inputs.restore == ''
         continue-on-error: true
         run: >
-          uv run -q geocolor_night.py $LOOP
+          uv run --locked -q geocolor_night.py $LOOP
           --bbox=-90.52,23.44,-68.48,49.12
           --out out/mobile
 
