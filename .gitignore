@@ -1,0 +1,8 @@
+.claude/
+__pycache__/
+out/
+*.gif
+*.mp4
+*.webp
+*.png
+.env
