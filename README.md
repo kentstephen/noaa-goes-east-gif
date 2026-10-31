@@ -1,7 +1,8 @@
 # noaa-goes-east-gif
 
-GeoColor-style night loops of the eastern United States from GOES-East (GOES-19),
-built from NOAA's public bucket with no cloud compute and no credentials.
+GeoColor-style loops of the eastern United States from GOES-East (GOES-19), at night
+or from afternoon into night, built from NOAA's public bucket with no cloud compute
+and no credentials.
 
 - **Satellite data:** the ABI CONUS multiband files (`ABI-L2-MCMIPC`, every 5 minutes)
   in `s3://noaa-goes19`. [VirtualiZarr](https://github.com/zarr-developers/VirtualiZarr)
@@ -9,10 +10,18 @@ built from NOAA's public bucket with no cloud compute and no credentials.
   and rows it needs (about 4 MB per band for full CONUS, less for a smaller box).
 - **City lights:** NASA's VIIRS Black Marble 2016, requested from
   [GIBS](https://nasa-gibs.github.io/gibs-api-docs/) at run time for the exact box.
-- **Night layer:** 10.3 µm infrared clouds over the city lights, plus low cloud and fog
-  from the 10.3 minus 3.9 µm difference, tinted pale blue.
-- **Day layer** (with `--day-night`): true color from bands 1 to 3 with the CIMSS
-  synthetic green, blended into night across the terminator.
+- **Night layer:** 10.3 µm infrared clouds over the city lights, with a local-contrast
+  boost for cloud texture, plus low cloud and fog from the 10.3 minus 3.9 µm
+  difference, tinted pale blue.
+- **Day layer** (with `--afternoon` or `--day-night`): true color from bands 1 to 3 with
+  - a sun-angle correction capped at 80 degrees,
+  - a Rayleigh (haze) correction from [pyspectral](https://github.com/pytroll/pyspectral),
+    tapered off near the terminator,
+  - detail from the 0.5 km red band (`ABI-L2-CMIPC` band 2), area-averaged to the
+    output grid and applied as a ratio to all three channels,
+  - the CIMSS synthetic green and CIRA's log contrast stretch.
+
+  It blends into the night layer from solar zenith 80 to 88 degrees.
 
 Frames are reprojected to Web Mercator so they line up with common web basemaps.
 
@@ -36,6 +45,9 @@ uv run geocolor_night.py --out out/
 # A chosen box and night
 uv run geocolor_night.py --bbox=-98.57,31.41,-67.52,46.43 --night 2026-10-29 --out out/
 
+# Afternoon into night: 2 hours before sunset reaches the box, through to first light
+uv run geocolor_night.py --afternoon 2 --night 2026-10-29 --out out/
+
 # The last 24 hours, day and night, every 15 minutes
 uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --every 15 --out out/
 ```
@@ -47,16 +59,22 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--night YYYY-MM-DD` | Eastern date of the evening the night starts |
 | `--sun-below` | Solar zenith angle that counts as dark: 90 is sunset, 96 is civil dusk |
 | `--every` | Minutes between frames (scans arrive every 5) |
+| `--afternoon H` | Start H hours before sunset first reaches the box, end at first light |
 | `--day-night`, `--hours` | Rolling window ending now, with the day layer |
+| `--no-hires` | Skip the 0.5 km red band detail |
+| `--fps` | Playback frames per second (default 11) |
+| `--formats` | Comma list of `mp4`, `webp`, `gif` (default `mp4`) |
 | `--max-dropped` | Share of frames that may be dropped before the run fails |
 | `--start`, `--end` | UTC override for the window |
 
-Outputs in `--out`: `east_night.mp4`, `east_night.webp`, `east_night.gif`, `frames/` and
-`report.json`.
-The MP4 is by far the smallest (3 to 5 MB for a night at 1400 px); the GIF is 40 MB or
-more.
+Outputs in `--out`: `east_night.mp4` (plus `.webp` or `.gif` when asked), `frames/` and
+`report.json`. The MP4 is by far the smallest: 3 to 5 MB for a night at 1400 px, about
+7.5 MB for a 15 hour afternoon-to-dawn loop. The GIF is 40 MB or more.
 
-A 1400 px night takes about a minute on a laptop and peaks around 1 GB of memory.
+A 1400 px night takes about a minute on a laptop and peaks around 1 GB of memory. An
+afternoon loop takes about 3 minutes, downloads about 3 GB (daytime frames read the
+0.5 km red band) and peaked at 3.6 GB with 4 workers; use `--workers 2` to lower that.
+The Rayleigh tables (about 60 MB) download on first use and are cached by pyspectral.
 
 ## Bad frames
 
@@ -78,6 +96,5 @@ frame, with the reason.
 ## Notes
 
 - Pixels outside the GOES-East CONUS scan area are drawn black.
-- The day layer has no Rayleigh correction yet, so daytime looks a little hazy.
 - Data: NOAA GOES-R series on the [AWS Open Data Registry](https://registry.opendata.aws/noaa-goes/);
   NASA Black Marble via GIBS.
