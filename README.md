@@ -133,6 +133,19 @@ gh workflow run hero.yml -f restore=2026-10-29
 Repo settings: secrets `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`,
 and the variable `R2_BUCKET`.
 
+### Backup trigger
+
+GitHub's schedule can be late, skip a day, or not start at all. `watchdog/` is a
+Cloudflare Worker that checks the `evening` metadata on the current loops in R2 at
+13:15, 15:15 and 18:15 UTC. If either loop is older than last evening and no render
+is queued or running, it starts `hero.yml` through the GitHub API. If GitHub has
+disabled the workflow for inactivity, it re-enables it first. On days the schedule
+works, it does nothing.
+
+It needs a fine-grained GitHub token (this repo only, Actions read and write) stored
+as the Worker secret `GH_TOKEN`. Deploy with `cd watchdog && npx wrangler deploy`;
+see its runs with `npx wrangler tail`.
+
 ## When a run fails
 
 The published loop is replaced only after a run succeeds. If a run fails for any
