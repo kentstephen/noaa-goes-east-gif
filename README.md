@@ -49,6 +49,9 @@ uv run geocolor_night.py --bbox=-98.57,31.41,-67.52,46.43 --night 2026-10-29 --o
 # Afternoon into night: 2 hours before sunset reaches the box, through to first light
 uv run geocolor_night.py --afternoon 2 --night 2026-10-29 --out out/
 
+# 8 seconds: 2 of afternoon, then dusk and night (what the daily job renders)
+uv run geocolor_night.py --seconds 8 --day-seconds 2 --bbox=-112.81,24.31,-66.47,47.11 --out out/
+
 # The last 24 hours, day and night, every 15 minutes
 uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --every 15 --out out/
 ```
@@ -61,6 +64,8 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--sun-below` | Solar zenith angle that counts as dark: 90 is sunset, 96 is civil dusk |
 | `--every` | Minutes between frames (scans arrive every 5) |
 | `--afternoon H` | Start H hours before sunset first reaches the box, end at first light |
+| `--seconds`, `--day-seconds` | Fixed-length loop: this many seconds of daylight before sunset first reaches the box, then dusk and night for the rest |
+| `--label`, `--label-aspect` | Corner for the time stamp, and a viewport shape (W:H) whose centered crop it must stay inside |
 | `--day-night`, `--hours` | Rolling window ending now, with the day layer |
 | `--no-hires` | Skip the 0.5 km red band detail |
 | `--fps` | Playback frames per second (default 11) |
@@ -93,6 +98,21 @@ entirely with fill values), which would flash a whole frame. Each run checks for
 
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
+
+## Daily job
+
+`.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
+evening's loop has finished. It renders two 8 second loops of that evening:
+
+| Name | Box | Frame | Time stamp |
+|---|---|---|---|
+| `hero-desktop` | `-112.81,24.31,-66.47,47.11` (Arizona to Maine) | 1400 x 860 | bottom left |
+| `hero-mobile` | `-90.52,23.44,-68.48,49.12` (Great Lakes to Florida) | 1400 x 2060 | top right, inside a 9:20 phone crop |
+
+Each uploads to a Cloudflare R2 bucket as `<name>.mp4` plus a `<name>.jpg` poster frame,
+overwriting the previous day's files, with a one hour cache lifetime. The bucket
+never holds more than these four files. Repo settings: secrets `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, and the variable `R2_BUCKET`.
 
 ## When a run fails
 

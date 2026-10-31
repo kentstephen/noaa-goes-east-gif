@@ -1,0 +1,108 @@
+# Renders the desktop and mobile hero loops once a day and uploads them to R2.
+#
+# Each loop overwrites one fixed object, so the bucket never holds more than the
+# current files. A loop whose render fails is not uploaded, so the last good one
+# keeps playing on the site.
+#
+# Repo settings needed:
+#   secrets: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+#   variable: R2_BUCKET
+
+name: hero loops
+
+on:
+  schedule:
+    # 12:30 UTC is 8:30 AM EDT / 7:30 AM EST. The latest a loop ends (around the
+    # June solstice) is about 11:20 UTC, so last evening's loop is always finished.
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hero
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      LOOP: --seconds 8 --day-seconds 2 --workers 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+
+      - name: Cache the Rayleigh tables
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pyspectral
+          key: pyspectral-rayleigh-v1
+
+      - name: Render desktop
+        id: desktop
+        continue-on-error: true
+        run: >
+          uv run -q geocolor_night.py $LOOP
+          --bbox=-112.81,24.31,-66.47,47.11
+          --out out/desktop
+
+      - name: Render mobile
+        id: mobile
+        continue-on-error: true
+        run: >
+          uv run -q geocolor_night.py $LOOP
+          --bbox=-90.52,23.44,-68.48,49.12
+          --label top-right --label-aspect 9:20
+          --out out/mobile
+
+      - name: Make poster frames
+        run: |
+          for v in desktop mobile; do
+            last=$(ls out/$v/frames/*.png 2>/dev/null | tail -1) || true
+            if [ -f out/$v/east_night.mp4 ] && [ -n "$last" ]; then
+              ffmpeg -y -loglevel error -i "$last" -q:v 3 out/$v/poster.jpg
+            fi
+          done
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ vars.R2_BUCKET }}
+          DESKTOP_OK: ${{ steps.desktop.outcome == 'success' }}
+          MOBILE_OK: ${{ steps.mobile.outcome == 'success' }}
+        run: |
+          put() {
+            aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" \
+              --content-type "$3" --cache-control "public, max-age=3600" --only-show-errors
+          }
+          if [ "$DESKTOP_OK" = true ]; then
+            put out/desktop/east_night.mp4 hero-desktop.mp4 video/mp4
+            put out/desktop/poster.jpg hero-desktop.jpg image/jpeg
+          fi
+          if [ "$MOBILE_OK" = true ]; then
+            put out/mobile/east_night.mp4 hero-mobile.mp4 video/mp4
+            put out/mobile/poster.jpg hero-mobile.jpg image/jpeg
+          fi
+
+      - name: Keep the run reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: out/*/report.json
+          retention-days: 7
+
+      - name: Fail the run if a loop was not replaced
+        if: steps.desktop.outcome != 'success' || steps.mobile.outcome != 'success'
+        run: |
+          echo "desktop: ${{ steps.desktop.outcome }}, mobile: ${{ steps.mobile.outcome }}"
+          echo "The site keeps playing the last good loop for any that failed."
+          exit 1

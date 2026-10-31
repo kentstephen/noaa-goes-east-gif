@@ -384,6 +384,31 @@ def sunset_reaches_box(lon: np.ndarray, lat: np.ndarray, evening: date) -> datet
     return times[int(np.argmax(szmax >= 90))]
 
 
+def timed_window(lon: np.ndarray, lat: np.ndarray, evening: date | None, seconds: float,
+                 day_seconds: float, fps: float, every: int) -> tuple[datetime, datetime]:
+    """A loop of fixed length: `day_seconds` of daylight before sunset first reaches
+    the box, then dusk and night for the rest of `seconds`.
+
+    Without `evening`, the latest evening whose loop has finished (with time for
+    NOAA's delivery delay) is used.
+    """
+    n, n_day = round(seconds * fps), round(day_seconds * fps)
+
+    def window(ev: date) -> tuple[datetime, datetime]:
+        s = sunset_reaches_box(lon, lat, ev) - timedelta(minutes=every * n_day)
+        return s, s + timedelta(minutes=every * (n - 1))
+
+    if evening is not None:
+        return window(evening)
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(EASTERN).date()
+    for back in (0, 1, 2):
+        s, e = window(today - timedelta(days=back))
+        if e <= now - timedelta(minutes=20):
+            return s, e
+    raise SystemExit("no finished loop window found")
+
+
 def last_evening(lon: np.ndarray, lat: np.ndarray, sun_below: float) -> date:
     now = datetime.now(timezone.utc)
     today = now.astimezone(EASTERN).date()
@@ -429,8 +454,31 @@ class HiresRed:
         return ratio
 
 
+def draw_label(im: Image.Image, text: str, corner: str, aspect: float | None) -> None:
+    """Burn the time into a corner of the frame.
+
+    With `aspect` (viewport width / height), the corner is that of the centered
+    crop a viewport of that shape shows with object-fit: cover, so a phone held
+    upright still sees the label.
+    """
+    draw = ImageDraw.Draw(im)
+    font = ImageFont.load_default(size=22)
+    x0, x1 = 0, im.width
+    if aspect is not None and aspect < im.width / im.height:
+        visible = im.height * aspect
+        x0 = int((im.width - visible) / 2)
+        x1 = int(x0 + visible)
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    w, h = right - left, bottom - top
+    margin = 18
+    x = x0 + margin if corner.endswith("left") else x1 - margin - w
+    y = margin if corner.startswith("top") else im.height - margin - h - 4
+    draw.text((x - left, y - top), text, fill=(235, 235, 235), font=font)
+
+
 def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampler: Sampler,
-           day: bool, geom: Geometry | None, hires: HiresRed | None) -> tuple[Image.Image, datetime]:
+           day: bool, geom: Geometry | None, hires: HiresRed | None,
+           label: tuple[str, float | None] = ("bottom-left", None)) -> tuple[Image.Image, datetime]:
     ds = open_scan(key)
     if sampler.key != (float(ds.x[0]), float(ds.y[0]), ds.sizes["x"], ds.sizes["y"]):
         raise BadScan("scan grid differs from the first scan")
@@ -455,10 +503,7 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     rgb = compose(bands, lights, sza if lit else None, geom, when, red_ratio)
     rgb[~sampler.valid] = 0
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype("uint8"))
-    draw = ImageDraw.Draw(im)
-    font = ImageFont.load_default(size=22)
-    label = when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z")
-    draw.text((18, im.height - 40), label, fill=(235, 235, 235), font=font)
+    draw_label(im, when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z"), *label)
     return im, when
 
 
@@ -492,6 +537,11 @@ def main() -> None:
     ap.add_argument("--afternoon", type=float,
                     help="start this many hours before sunset first reaches the box, "
                          "run through the night to first light, with the day layer")
+    ap.add_argument("--seconds", type=float,
+                    help="fixed loop length in seconds: --day-seconds of daylight before "
+                         "sunset reaches the box, then dusk and night")
+    ap.add_argument("--day-seconds", type=float, default=2,
+                    help="seconds of daylight at the start of a --seconds loop")
     ap.add_argument("--sun-below", type=float, default=90.0,
                     help="solar zenith angle, degrees, that counts as dark (90 sunset, 96 civil dusk)")
     ap.add_argument("--day-night", action="store_true",
@@ -509,6 +559,12 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--bbox", default=DEFAULT_BBOX, help="lon_min,lat_min,lon_max,lat_max")
     ap.add_argument("--width", type=int, default=1400, help="output width in pixels")
+    ap.add_argument("--label", default="bottom-left",
+                    choices=["bottom-left", "bottom-right", "top-left", "top-right"],
+                    help="corner for the burned-in time")
+    ap.add_argument("--label-aspect", default=None,
+                    help="keep the time inside the centered crop of a viewport this shape, "
+                         "W:H (e.g. 9:20 for a phone held upright)")
     args = ap.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -521,13 +577,21 @@ def main() -> None:
     lon, lat = grid.lonlat()
     print(f"grid {grid.width} x {grid.height}")
 
-    day = args.day_night or args.afternoon is not None
+    day = args.day_night or args.afternoon is not None or args.seconds is not None
+    label_aspect = None
+    if args.label_aspect:
+        lw, lh = (float(v) for v in args.label_aspect.split(":"))
+        label_aspect = lw / lh
+    label = (args.label, label_aspect)
     if args.start and args.end:
         start = datetime.fromisoformat(args.start).replace(tzinfo=timezone.utc)
         end = datetime.fromisoformat(args.end).replace(tzinfo=timezone.utc)
     elif args.day_night:
         end = datetime.now(timezone.utc) - timedelta(minutes=15)  # NOAA delivery delay
         start = end - timedelta(hours=args.hours)
+    elif args.seconds is not None:
+        start, end = timed_window(lon, lat, args.night, args.seconds, args.day_seconds,
+                                  args.fps, args.every)
     else:
         evening = args.night or last_evening(lon, lat, args.sun_below)
         start, end = night_window(lon, lat, evening, args.sun_below)
@@ -554,7 +618,7 @@ def main() -> None:
         rejected = []
         for key in cands:
             try:
-                im, when = render(key, lights, lon, lat, sampler, day, geom, hires)
+                im, when = render(key, lights, lon, lat, sampler, day, geom, hires, label)
             except BadScan as e:
                 rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e)})
                 continue
