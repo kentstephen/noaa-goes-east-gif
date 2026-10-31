@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
+import shutil
 import resource
 import subprocess
 import time
@@ -94,23 +96,33 @@ class Grid:
         return np.asarray(im, dtype="float32") / 255
 
 
-def list_scans(start: datetime, end: datetime, every_min: int) -> list[str]:
+def list_scans(start: datetime, end: datetime, every_min: int) -> list[list[str]]:
+    """One slot per frame time, every `every_min` minutes from `start`.
+
+    Each slot lists the scans within one step of its time, nearest first, so a bad
+    scan can be swapped for a neighbor (two bad scans in a row happen). A slot with
+    no scans (an outage) is left out.
+    """
     keys: list[str] = []
-    hour = start.replace(minute=0, second=0, microsecond=0)
-    while hour <= end:
+    pad = timedelta(minutes=every_min)
+    hour = (start - pad).replace(minute=0, second=0, microsecond=0)
+    while hour <= end + pad:
         prefix = f"{PRODUCT}/{hour:%Y/%j/%H}/"
         for batch in obstore.list(s3, prefix=prefix):
             keys += [o["path"] for o in batch]
         hour += timedelta(hours=1)
-    out, last = [], None
-    for k in sorted(keys):
-        t = scan_start(k)
-        if not (start <= t <= end):
-            continue
-        if last is None or t - last >= timedelta(minutes=every_min) - timedelta(seconds=30):
-            out.append(k)
-            last = t
-    return out
+    keys = sorted(k for k in keys
+                  if start - timedelta(minutes=every_min) <= scan_start(k) <= end + timedelta(minutes=every_min))
+    step = timedelta(minutes=every_min)
+    slots, t = [], start
+    while t <= end:
+        near = [k for k in keys if abs(scan_start(k) - t) <= step]
+        if near:
+            slots.append(sorted(near, key=lambda k: abs(scan_start(k) - t)))
+        else:
+            print(f"no scan near {t:%Y-%m-%d %H:%M} UTC, slot skipped")
+        t += step
+    return slots
 
 
 def scan_start(key: str) -> datetime:
@@ -163,6 +175,40 @@ class Sampler:
 
     def warp(self, a: np.ndarray) -> np.ndarray:
         return map_coordinates(a, self.coords, order=1, mode="nearest").astype("float32")
+
+
+class BadScan(ValueError):
+    """A scan that fails a quality check and should not become a frame."""
+
+
+# Share of the box a band may be missing before the scan is rejected. A failed band
+# arrives as all fill values, so the real cases are far above this.
+MAX_MISSING = 0.05
+# Plausible brightness temperatures, kelvin, for the median over the box.
+BT_RANGE = (180.0, 320.0)
+
+
+def check_band(name: str, a: np.ndarray, valid: np.ndarray) -> None:
+    vals = a[valid]
+    missing = float(np.mean(~np.isfinite(vals))) if vals.size else 1.0
+    if missing > MAX_MISSING:
+        raise BadScan(f"{name} missing over {missing:.0%} of the box")
+    if name in ("C07", "C13"):
+        med = float(np.nanmedian(vals))
+        if not BT_RANGE[0] <= med <= BT_RANGE[1]:
+            raise BadScan(f"{name} median {med:.1f} K is outside {BT_RANGE}")
+
+
+def brightness_outliers(means: list[float], tol: float = 0.25) -> list[int]:
+    """Frames whose mean brightness jumps from the median of the 3 frames either side."""
+    bad = []
+    for i, m in enumerate(means):
+        nb = means[max(0, i - 3):i] + means[i + 1:i + 4]
+        if nb:
+            med = float(np.median(nb))
+            if med > 0 and abs(m - med) / med > tol:
+                bad.append(i)
+    return bad
 
 
 def open_scan(key: str) -> xr.Dataset:
@@ -238,7 +284,11 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray,
     names = ["C07", "C13"]
     if sza is not None and (sza < 88).any():
         names += ["C01", "C02", "C03"]
-    bands = {n: sampler.warp(np.nan_to_num(win[f"CMI_{n}"].values, nan=0.0)) for n in names}
+    bands = {}
+    for n in names:
+        a = sampler.warp(win[f"CMI_{n}"].values)  # fill values stay NaN for the check
+        check_band(n, a, sampler.valid)
+        bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[sampler.valid])))
     rgb = compose(bands, lights, sza)
     rgb[~sampler.valid] = 0
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype("uint8"))
@@ -258,6 +308,8 @@ def main() -> None:
     ap.add_argument("--day-night", action="store_true",
                     help="the last --hours ending now, with day and night blended")
     ap.add_argument("--hours", type=float, default=24, help="length of the --day-night loop")
+    ap.add_argument("--max-dropped", type=float, default=0.1,
+                    help="fail without writing videos when more than this share of frames is dropped")
     ap.add_argument("--start", help="UTC override, e.g. 2026-10-29T22:30")
     ap.add_argument("--end", help="UTC override")
     ap.add_argument("--every", type=int, default=10, help="minutes between frames")
@@ -289,25 +341,65 @@ def main() -> None:
     fmt = "%b %-d %-I:%M %p %Z"
     print(f"window: {start.astimezone(EASTERN):{fmt}} to {end.astimezone(EASTERN):{fmt}}"
           f" ({(end - start).total_seconds() / 3600:.1f} h)")
-    keys = list_scans(start, end, args.every)
-    print(f"{len(keys)} scans, lights in {time.time() - t0:.1f} s")
+    slots = list_scans(start, end, args.every)
+    print(f"{len(slots)} scans, lights in {time.time() - t0:.1f} s")
 
     # One sampler built up front, then shared by the workers.
-    _, _, sampler = render(keys[0], lights, lon, lat, None, args.day_night)
+    sampler = Sampler(open_scan(slots[0][0]), lon, lat)
+    raw_dir = args.out / "frames_raw"
+    for d in (frames_dir, raw_dir):
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir()
 
-    def job(i_key: tuple[int, str]) -> str:
-        i, key = i_key
-        im, when, _ = render(key, lights, lon, lat, sampler, args.day_night)
-        im.save(frames_dir / f"{i:04d}.png")
-        return f"{when:%H:%M}"
+    def job(i_cands: tuple[int, list[str]]) -> dict:
+        i, cands = i_cands
+        rejected = []
+        for key in cands:
+            try:
+                im, when, _ = render(key, lights, lon, lat, sampler, args.day_night)
+            except BadScan as e:
+                rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e)})
+                continue
+            path = raw_dir / f"{i:04d}.png"
+            im.save(path)
+            mean = float(np.asarray(im.reduce(8), dtype="float32").mean())
+            return {"slot": i, "scan": key.rsplit("/", 1)[-1], "time": when.isoformat(),
+                    "path": str(path), "mean": mean, "rejected": rejected}
+        return {"slot": i, "scan": None, "rejected": rejected}
 
+    results = []
     with ThreadPoolExecutor(args.workers) as pool:
-        for n, stamp in enumerate(pool.map(job, enumerate(keys)), 1):
-            if n % 10 == 0 or n == len(keys):
-                print(f"{n}/{len(keys)} {stamp} {time.time() - t0:.0f} s", flush=True)
+        for n, r in enumerate(pool.map(job, enumerate(slots)), 1):
+            results.append(r)
+            for rej in r["rejected"]:
+                print(f"  rejected {rej['scan']}: {rej['reason']}", flush=True)
+            if n % 10 == 0 or n == len(slots):
+                print(f"{n}/{len(slots)} {time.time() - t0:.0f} s", flush=True)
 
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
     print(f"frames done in {time.time() - t0:.0f} s, peak RSS {peak:.0f} MB")
+
+    # Quality report: swapped scans, dropped slots, brightness jumps.
+    kept = [r for r in results if r["scan"]]
+    for j in brightness_outliers([r["mean"] for r in kept]):
+        kept[j]["outlier"] = True
+        print(f"  dropped {kept[j]['scan']}: brightness jump ({kept[j]['mean']:.0f})")
+    final = [r for r in kept if not r.get("outlier")]
+    dropped = len(slots) - len(final)
+    report = {
+        "window_utc": [start.isoformat(), end.isoformat()],
+        "slots": len(slots), "frames": len(final), "dropped": dropped,
+        "swapped": [r for r in kept if r["rejected"]],
+        "unfilled": [r for r in results if not r["scan"]],
+        "outliers": [r for r in kept if r.get("outlier")],
+    }
+    (args.out / "report.json").write_text(json.dumps(report, indent=2))
+    print(f"quality: {len(final)}/{len(slots)} frames kept, {len(report['swapped'])} swapped, "
+          f"{dropped} dropped")
+    if dropped > args.max_dropped * len(slots):
+        raise SystemExit(f"too many bad frames ({dropped}/{len(slots)}); videos not written")
+    for n, r in enumerate(final):
+        shutil.copy(r["path"], frames_dir / f"{n:04d}.png")
 
     frames = [Image.open(p) for p in sorted(frames_dir.glob("*.png"))]
     small = [f.resize((f.width * 3 // 4, f.height * 3 // 4), Image.LANCZOS) for f in frames]

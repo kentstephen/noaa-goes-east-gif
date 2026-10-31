@@ -48,13 +48,32 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--sun-below` | Solar zenith angle that counts as dark: 90 is sunset, 96 is civil dusk |
 | `--every` | Minutes between frames (scans arrive every 5) |
 | `--day-night`, `--hours` | Rolling window ending now, with the day layer |
+| `--max-dropped` | Share of frames that may be dropped before the run fails |
 | `--start`, `--end` | UTC override for the window |
 
-Outputs in `--out`: `east_night.mp4`, `east_night.webp`, `east_night.gif` and `frames/`.
+Outputs in `--out`: `east_night.mp4`, `east_night.webp`, `east_night.gif`, `frames/` and
+`report.json`.
 The MP4 is by far the smallest (3 to 5 MB for a night at 1400 px); the GIF is 40 MB or
 more.
 
 A 1400 px night takes about a minute on a laptop and peaks around 1 GB of memory.
+
+## Bad frames
+
+Scans sometimes arrive with a band missing (for example, the 3.9 µm band filled
+entirely with fill values), which would flash a whole frame. Each run checks for this:
+
+- **Per scan:** each band must cover at least 95% of the box, and the infrared median
+  must be a plausible temperature. A failed scan is swapped for the nearest good scan
+  within one step.
+- **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
+  is dropped.
+- **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
+  run exits with an error and writes no videos, so a scheduled job keeps the last good
+  loop.
+
+`report.json` in the output folder lists every swapped scan, empty slot and dropped
+frame, with the reason.
 
 ## Notes
 
