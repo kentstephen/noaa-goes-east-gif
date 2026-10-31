@@ -91,7 +91,7 @@ jobs:
         if: steps.lock.outputs.changed == 'true'
         run: >
           uv run --locked -q geocolor_night.py $LOOP
-          --bbox=-90.86,21.91,-69.25,50.35
+          --bbox=-89.82,19.4,-68.5,49.99
           --out out/mobile
 
       - name: Keep the test videos
