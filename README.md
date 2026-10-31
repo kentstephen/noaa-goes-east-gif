@@ -107,13 +107,26 @@ time stamp burned in:
 
 | Name | Box | Frame |
 |---|---|---|
-| `hero-desktop` | `-112.81,24.31,-66.47,47.11` (Arizona to Maine) | 1400 x 860 |
+| `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia) | 1400 x 882 |
 | `hero-mobile` | `-90.52,23.44,-68.48,49.12` (Great Lakes to Florida) | 1400 x 2060 |
 
-Each uploads to a Cloudflare R2 bucket as `<name>.mp4` plus a `<name>.jpg` poster frame,
-overwriting the previous day's files, with a one hour cache lifetime. The bucket
-never holds more than these four files. Repo settings: secrets `R2_ACCOUNT_ID`,
-`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, and the variable `R2_BUCKET`.
+Each uploads to a Cloudflare R2 bucket:
+
+- `hero-<name>.mp4` and a `hero-<name>.jpg` poster frame: the current loop, which the
+  site plays. Overwritten each day, with a one hour cache lifetime.
+- `archive/<name>/<YYYY-MM-DD>.mp4` and `.jpg`: a dated copy, named for the evening it
+  shows. The newest 7 evenings are kept. Older copies are deleted by count, not by
+  age, so an outage of any length never empties the archive.
+
+To put an earlier evening back (for example after a loop that passed the checks but
+looks wrong), run the workflow by hand with `restore` set to its date, or:
+
+```bash
+gh workflow run hero.yml -f restore=2026-10-29
+```
+
+Repo settings: secrets `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`,
+and the variable `R2_BUCKET`.
 
 ## When a run fails
 

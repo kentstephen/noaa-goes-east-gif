@@ -1,8 +1,9 @@
 # Renders the desktop and mobile hero loops once a day and uploads them to R2.
 #
-# Each loop overwrites one fixed object, so the bucket never holds more than the
-# current files. A loop whose render fails is not uploaded, so the last good one
-# keeps playing on the site.
+# Each loop overwrites one fixed object the site plays (hero-desktop.mp4,
+# hero-mobile.mp4) and adds a dated copy under archive/, of which the newest 7
+# evenings are kept. A loop whose render fails is not uploaded, so the last good
+# one keeps playing on the site.
 #
 # Repo settings needed:
 #   secrets: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
@@ -16,6 +17,11 @@ on:
     # June solstice) is about 11:20 UTC, so last evening's loop is always finished.
     - cron: "30 12 * * *"
   workflow_dispatch:
+    inputs:
+      restore:
+        description: "Put an archived evening back as the current loops (YYYY-MM-DD); leave empty to render"
+        required: false
+        default: ""
 
 concurrency:
   group: hero
@@ -33,9 +39,11 @@ jobs:
       - uses: astral-sh/setup-uv@v6
 
       - name: Install ffmpeg
+        if: inputs.restore == ''
         run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
 
       - name: Cache the Rayleigh tables
+        if: inputs.restore == ''
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pyspectral
@@ -43,14 +51,16 @@ jobs:
 
       - name: Render desktop
         id: desktop
+        if: inputs.restore == ''
         continue-on-error: true
         run: >
           uv run -q geocolor_night.py $LOOP
-          --bbox=-112.81,24.31,-66.47,47.11
+          --bbox=-113.41,23.44,-61.94,49.12
           --out out/desktop
 
       - name: Render mobile
         id: mobile
+        if: inputs.restore == ''
         continue-on-error: true
         run: >
           uv run -q geocolor_night.py $LOOP
@@ -58,6 +68,7 @@ jobs:
           --out out/mobile
 
       - name: Make poster frames
+        if: inputs.restore == ''
         run: |
           for v in desktop mobile; do
             last=$(ls out/$v/frames/*.png 2>/dev/null | tail -1) || true
@@ -67,6 +78,7 @@ jobs:
           done
 
       - name: Upload to R2
+        if: inputs.restore == ''
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -77,22 +89,42 @@ jobs:
           BUCKET: ${{ vars.R2_BUCKET }}
           DESKTOP_OK: ${{ steps.desktop.outcome == 'success' }}
           MOBILE_OK: ${{ steps.mobile.outcome == 'success' }}
+          KEEP: 7
         run: |
           put() {
             aws s3 cp "$1" "s3://$BUCKET/$2" --endpoint-url "$ENDPOINT" \
-              --content-type "$3" --cache-control "public, max-age=3600" --only-show-errors
+              --content-type "$3" --cache-control "$4" --metadata "$meta" --only-show-errors
           }
-          if [ "$DESKTOP_OK" = true ]; then
-            put out/desktop/east_night.mp4 hero-desktop.mp4 video/mp4
-            put out/desktop/poster.jpg hero-desktop.jpg image/jpeg
-          fi
-          if [ "$MOBILE_OK" = true ]; then
-            put out/mobile/east_night.mp4 hero-mobile.mp4 video/mp4
-            put out/mobile/poster.jpg hero-mobile.jpg image/jpeg
-          fi
+          publish() {
+            v=$1
+            # The Eastern date of the evening the loop shows (e.g. 2026-10-29), and the
+            # loop's first and last scan times in UTC, stored on every object so the
+            # site can show when the loop is from.
+            day=$(python3 -c "import json, datetime, zoneinfo; s = json.load(open('out/$v/report.json'))['window_utc'][0]; print(datetime.datetime.fromisoformat(s).astimezone(zoneinfo.ZoneInfo('America/New_York')).date())")
+            meta=$(python3 -c "import json; s, e = json.load(open('out/$v/report.json'))['window_utc']; print(json.dumps({'evening': '$day', 'start': s, 'end': e}))")
+            # Dated copies first, then the current files the site plays.
+            put out/$v/east_night.mp4 archive/$v/$day.mp4 video/mp4 "public, max-age=86400"
+            put out/$v/poster.jpg archive/$v/$day.jpg image/jpeg "public, max-age=86400"
+            put out/$v/east_night.mp4 hero-$v.mp4 video/mp4 "public, max-age=3600"
+            put out/$v/poster.jpg hero-$v.jpg image/jpeg "public, max-age=3600"
+            echo "$v: uploaded $day"
+            # Keep the newest $KEEP evenings. Count by file, not by age, so a long
+            # outage never empties the archive.
+            aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "archive/$v/" \
+              --endpoint-url "$ENDPOINT" --query 'Contents[].Key' --output text \
+              | tr '\t' '\n' | { grep -E '\.mp4$' || true; } | sort -r | tail -n +$((KEEP + 1)) \
+              | while read -r old; do
+                  for key in "$old" "${old%.mp4}.jpg"; do
+                    aws s3 rm "s3://$BUCKET/$key" --endpoint-url "$ENDPOINT" --only-show-errors
+                    echo "$v: removed $key"
+                  done
+                done
+          }
+          if [ "$DESKTOP_OK" = true ]; then publish desktop; fi
+          if [ "$MOBILE_OK" = true ]; then publish mobile; fi
 
       - name: Keep the run reports
-        if: always()
+        if: always() && inputs.restore == ''
         uses: actions/upload-artifact@v4
         with:
           name: reports
@@ -100,8 +132,33 @@ jobs:
           retention-days: 7
 
       - name: Fail the run if a loop was not replaced
-        if: steps.desktop.outcome != 'success' || steps.mobile.outcome != 'success'
+        if: inputs.restore == '' && (steps.desktop.outcome != 'success' || steps.mobile.outcome != 'success')
         run: |
           echo "desktop: ${{ steps.desktop.outcome }}, mobile: ${{ steps.mobile.outcome }}"
           echo "The site keeps playing the last good loop for any that failed."
           exit 1
+
+      - name: Restore an archived evening
+        if: inputs.restore != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ vars.R2_BUCKET }}
+          DAY: ${{ inputs.restore }}
+        run: |
+          [[ "$DAY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "restore must be YYYY-MM-DD"; exit 1; }
+          for v in desktop mobile; do
+            meta=$(aws s3api head-object --bucket "$BUCKET" --key "archive/$v/$DAY.mp4" \
+              --endpoint-url "$ENDPOINT" --query Metadata --output json)
+            for ext in mp4 jpg; do
+              type=$([ $ext = mp4 ] && echo video/mp4 || echo image/jpeg)
+              aws s3 cp "s3://$BUCKET/archive/$v/$DAY.$ext" "s3://$BUCKET/hero-$v.$ext" \
+                --endpoint-url "$ENDPOINT" --metadata-directive REPLACE --metadata "$meta" \
+                --content-type "$type" --cache-control "public, max-age=3600" --only-show-errors
+            done
+            echo "$v: current loop is now $DAY"
+          done
