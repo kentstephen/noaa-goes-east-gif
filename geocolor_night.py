@@ -31,6 +31,7 @@ import argparse
 import io
 import json
 import resource
+import sys
 import shutil
 import subprocess
 import threading
@@ -638,7 +639,8 @@ def main() -> None:
             if n % 10 == 0 or n == len(slots):
                 print(f"{n}/{len(slots)} {time.time() - t0:.0f} s", flush=True)
 
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20
+    # ru_maxrss is in bytes on macOS and in kilobytes on Linux.
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (2**20 if sys.platform == "darwin" else 2**10)
     print(f"frames done in {time.time() - t0:.0f} s, peak RSS {peak:.0f} MB")
 
     # Quality report: swapped scans, dropped slots, brightness jumps. In day-night
