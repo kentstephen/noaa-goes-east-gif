@@ -5,7 +5,7 @@ or from afternoon into night, read straight from NOAA's public bucket with
 [VirtualiZarr](https://github.com/zarr-developers/VirtualiZarr), with no cloud compute
 and no credentials.
 
-Inspired by the old [fused.io](https://fused.io) website.
+Inspired by the old [fused.io](https://fused.io) website homepage.
 
 - **Satellite data:** the ABI CONUS multiband files (`ABI-L2-MCMIPC`, every 5 minutes)
   in `s3://noaa-goes19`. [VirtualiZarr](https://github.com/zarr-developers/VirtualiZarr)
