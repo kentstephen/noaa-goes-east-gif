@@ -16,7 +16,8 @@ name: dependency upgrade
 
 on:
   schedule:
-    # 15:00 UTC on the 1st, clear of the 12:30 UTC daily render.
+    # 15:00 UTC on the 1st, clear of the 12:30 UTC daily render. GitHub often does
+    # not start it; the watchdog Worker starts it at 15:15 or 18:15 UTC if not.
     - cron: "0 15 1 * *"
   workflow_dispatch:
 

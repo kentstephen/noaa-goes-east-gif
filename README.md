@@ -140,9 +140,11 @@ and the variable `R2_BUCKET`.
 GitHub's schedule can be late, skip a day, or not start at all. `watchdog/` is a
 Cloudflare Worker that checks the `evening` metadata on the current loops in R2 at
 13:15, 15:15 and 18:15 UTC. If either loop is older than last evening and no render
-is queued or running, it starts `hero.yml` through the GitHub API. If GitHub has
-disabled the workflow for inactivity, it re-enables it first. On days the schedule
-works, it does nothing.
+is queued or running, it starts `hero.yml` through the GitHub API. At 15:15 and
+18:15 UTC it also starts the monthly upgrade (`deps.yml`) if that has no run yet this
+month; a failed upgrade counts as this month's run and is not retried. If GitHub has
+disabled either workflow for inactivity, it re-enables it first. On days the
+schedule works, it does nothing.
 
 It needs a fine-grained GitHub token (this repo only, Actions read and write) stored
 as the Worker secret `GH_TOKEN`. Deploy with `cd watchdog && npx wrangler deploy`;
