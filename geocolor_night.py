@@ -21,8 +21,10 @@ stretch. Night clouds get a local-contrast boost.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
+import os
 import re
 import resource
 import sys
@@ -185,8 +187,63 @@ def check_time(ds: xr.Dataset, key: str) -> None:
         raise BadScan(f"time inside the file ({t:%Y-%m-%d %H:%M} UTC) does not match its name")
 
 
-def read_bands(key: str, sampler: Sampler, names: list[str]) -> dict[str, np.ndarray]:
-    """The named bands over the box, warped to the output grid.
+# Global attributes that change every scan, or with NOAA's operations (which of its
+# processing clusters made the file). The rest describe the file's form.
+VOLATILE_ATTRS = {"date_created", "time_coverage_start", "time_coverage_end", "id",
+                  "dataset_name", "timeline_id", "orbital_slot_comment"}
+OPERATIONAL_ATTRS = {"production_cluster", "production_site", "production_environment"}
+FORMS_FILE = Path(__file__).with_name("forms.json")
+
+
+def _short_hash(o) -> str:
+    return hashlib.sha1(json.dumps(o, sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def scan_form(ds: xr.Dataset) -> dict[str, str]:
+    """Short hashes of each part of a file's form, from metadata already read.
+
+    NOAA changes the form of the files now and then (variable names, chunk layout,
+    projection, scaling). Each run of one form is an era; a scan in a new form shows
+    up in report.json, so a change is noticed when it lands rather than later.
+    """
+    bands = sorted(n for n in ds.data_vars if n[:5] in ("CMI_C", "DQF_C"))
+    layout = {n: [str(ds[n].encoding.get(k)) for k in ("dtype", "chunks", "compressors", "serializer",
+                                                         "fill_value")] for n in bands}
+    scaling = {n: [str(ds[n].encoding.get(k, ds[n].attrs.get(k)))
+                   for k in ("scale_factor", "add_offset", "_FillValue", "units")]
+               for n in bands if n.startswith("CMI_")}
+    proj = dict(ds["goes_imager_projection"].attrs) if "goes_imager_projection" in ds else {}
+    grid = [ds.sizes.get("x"), ds.sizes.get("y")]
+    if "x" in ds and "y" in ds:
+        grid += [round(float(ds.x[0]), 6), round(float(ds.y[0]), 6)]
+    attrs = {k: v for k, v in ds.attrs.items() if k not in VOLATILE_ATTRS | OPERATIONAL_ATTRS}
+    parts = {"variables": _short_hash(sorted(ds.variables)), "band layouts": _short_hash(layout),
+             "band scaling": _short_hash(scaling), "projection": _short_hash(proj),
+             "grid": _short_hash(grid), "global attrs": _short_hash(attrs)}
+    return {"form": _short_hash(parts), **parts}
+
+
+def form_runs(results: list[dict]) -> list[dict]:
+    """Consecutive scans in one form, in time order, each marked known or new against
+    forms.json (the forms seen so far in the archive)."""
+    known = json.loads(FORMS_FILE.read_text()) if FORMS_FILE.exists() else {}
+    runs = []
+    for r in sorted((r for r in results if r.get("form")), key=lambda r: r["scan"]):
+        f = r["form"]
+        if runs and runs[-1]["form"] == f["form"]:
+            runs[-1]["last_scan"], runs[-1]["scans"] = r["scan"], runs[-1]["scans"] + 1
+            continue
+        changed = [k for k in f if k != "form" and runs and runs[-1]["parts"][k] != f[k]]
+        runs.append({"form": f["form"], "known": f["form"] in known,
+                     "era": known.get(f["form"], {}).get("era"),
+                     "first_scan": r["scan"], "last_scan": r["scan"], "scans": 1,
+                     "changed_from_previous": changed,
+                     "parts": {k: v for k, v in f.items() if k != "form"}})
+    return runs
+
+
+def read_bands(key: str, sampler: Sampler, names: list[str]) -> tuple[dict[str, np.ndarray], dict]:
+    """The named bands over the box, warped to the output grid, and the file's form.
 
     Anything wrong with the file itself (a band absent, a corrupted chunk, a missing
     attribute) becomes BadScan, so the scan is swapped for a neighbor rather than
@@ -194,6 +251,7 @@ def read_bands(key: str, sampler: Sampler, names: list[str]) -> dict[str, np.nda
     """
     try:
         ds = open_scan(key)
+        form = scan_form(ds)
         check_time(ds, key)
         if sampler.key != (float(ds.x[0]), float(ds.y[0]), ds.sizes["x"], ds.sizes["y"]):
             raise BadScan("scan grid differs from the first scan")
@@ -201,7 +259,7 @@ def read_bands(key: str, sampler: Sampler, names: list[str]) -> dict[str, np.nda
         if absent:
             raise BadScan(f"{', '.join(absent)} absent from the file")
         win = sampler.window(ds)
-        return {n: sampler.warp(win[f"CMI_{n}"].values) for n in names}
+        return {n: sampler.warp(win[f"CMI_{n}"].values) for n in names}, form
     except BadScan:
         raise
     except Exception as e:
@@ -538,7 +596,7 @@ def draw_label(im: Image.Image, text: str, corner: str, aspect: float | None) ->
 
 def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampler: Sampler,
            day: bool, geom: Geometry | None, hires: HiresRed | None,
-           label: tuple[str, float | None] = ("bottom-left", None)) -> tuple[Image.Image, datetime]:
+           label: tuple[str, float | None] = ("bottom-left", None)) -> tuple[Image.Image, datetime, dict]:
     when = scan_start(key)
     sza = solar_zenith(lat, lon, when) if day else None
     names = ["C07", "C13"]
@@ -546,7 +604,8 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     if lit:
         names += ["C01", "C02", "C03"]
     bands = {}
-    for n, a in read_bands(key, sampler, names).items():  # fill values stay NaN for the check
+    raw, form = read_bands(key, sampler, names)
+    for n, a in raw.items():  # fill values stay NaN for the check
         check_band(n, a, sampler.valid)
         bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[sampler.valid])))
     red_ratio = None
@@ -560,7 +619,7 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype("uint8"))
     if label[0] != "none":
         draw_label(im, when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z"), *label)
-    return im, when
+    return im, when, form
 
 
 def write_outputs(frames_dir: Path, out: Path, formats: set[str], fps: float) -> None:
@@ -682,7 +741,7 @@ def main() -> None:
         rejected = []
         for key in cands:
             try:
-                im, when = render(key, lights, lon, lat, sampler, day, geom, hires, label)
+                im, when, form = render(key, lights, lon, lat, sampler, day, geom, hires, label)
             except BadScan as e:
                 rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e)})
                 continue
@@ -690,7 +749,7 @@ def main() -> None:
             im.save(path)
             mean = float(np.asarray(im.reduce(8), dtype="float32").mean())
             return {"slot": i, "scan": key.rsplit("/", 1)[-1], "time": when.isoformat(),
-                    "path": str(path), "mean": mean, "rejected": rejected}
+                    "path": str(path), "mean": mean, "rejected": rejected, "form": form}
         return {"slot": i, "scan": None, "rejected": rejected}
 
     results = []
@@ -714,12 +773,24 @@ def main() -> None:
         print(f"  dropped {kept[j]['scan']}: brightness jump ({kept[j]['mean']:.0f})")
     final = [r for r in kept if not r.get("outlier")]
     dropped = len(slots) - len(final)
+    def slim(r: dict) -> dict:
+        return {k: v for k, v in r.items() if k != "form"}
+
+    forms = form_runs(results)
+    for f in forms:
+        if f["changed_from_previous"]:
+            print(f"  scan form changed at {f['first_scan']}: {', '.join(f['changed_from_previous'])}")
+        if not f["known"]:
+            msg = f"scan form {f['form']} is not in forms.json (first {f['first_scan']})"
+            # A warning annotation on the GitHub Actions run; a plain line elsewhere.
+            print(f"::warning::{msg}" if os.environ.get("GITHUB_ACTIONS") else f"  new {msg}", flush=True)
     report = {
         "window_utc": [start.isoformat(), end.isoformat()],
         "slots": len(slots), "frames": len(final), "dropped": dropped,
-        "swapped": [r for r in kept if r["rejected"]],
-        "unfilled": [r for r in results if not r["scan"]],
-        "outliers": [r for r in kept if r.get("outlier")],
+        "swapped": [slim(r) for r in kept if r["rejected"]],
+        "unfilled": [slim(r) for r in results if not r["scan"]],
+        "outliers": [slim(r) for r in kept if r.get("outlier")],
+        "scan_forms": forms,
     }
     (args.out / "report.json").write_text(json.dumps(report, indent=2))
     print(f"quality: {len(final)}/{len(slots)} frames kept, {len(report['swapped'])} swapped, "

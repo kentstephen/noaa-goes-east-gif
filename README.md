@@ -115,6 +115,22 @@ lists them, and the checks below cover the ones that can reach a single frame:
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
 
+### File forms
+
+NOAA changes the form of the files now and then, without notice in the files
+themselves. Each scan's form (variable names, chunk layout, scaling, projection, grid,
+global attributes) is hashed, and `report.json` lists the runs of one form under
+`scan_forms`, each marked known or new against `forms.json`. A form not in
+`forms.json` prints a warning (an annotation on a GitHub Actions run). The run still
+renders, since each file is read on its own; the warning is there to look at what
+changed. The GOES-19 forms so far:
+
+| Form | Scans (UTC) | What changed |
+|---|---|---|
+| test position | 2024-10-10 to 2025-03-20 13:06 | 89.5 W checkout; no files Mar 21 to 31 while the satellite moved |
+| operational, tiles | 2025-04-01 19:31 to 2026-07-09 17:11 | 75.2 W: new grid and projection |
+| operational, strips | 2026-07-09 17:16 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles. GOES-18 changed on the same scan |
+
 ## Daily job
 
 `.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
