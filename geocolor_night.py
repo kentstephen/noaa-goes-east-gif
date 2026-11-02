@@ -324,14 +324,30 @@ def known_forms() -> dict[str, dict]:
     return known
 
 
+def form_distance(a: dict, b: dict) -> int:
+    """How many things differ between two form details: variables added or removed,
+    bands whose storage or scaling differs, projection and global attributes, the grid.
+
+    Counted per item, not per part: a file with one band missing differs from its own
+    era's form by that band alone, but from another era's form by the band and every
+    band whose chunks or codecs changed between the eras."""
+    n = len(set(a.get("variables", [])) ^ set(b.get("variables", [])))
+    for part in ("band layouts", "band scaling", "projection", "global attrs"):
+        pa, pb = a.get(part, {}), b.get(part, {})
+        n += sum(pa.get(k) != pb.get(k) for k in set(pa) & set(pb))
+        if part in ("projection", "global attrs"):
+            n += len(set(pa) ^ set(pb))  # bands in only one are counted under variables
+    n += a.get("grid") != b.get("grid")
+    n += len(set(a) ^ set(b))
+    return n
+
+
 def closest_known(detail: dict, known: dict[str, dict]) -> tuple[str, dict] | None:
-    """The known form with the fewest differing parts; ties go to the newest era."""
-    hashes = form_hashes(detail)
+    """The known form with the fewest differences; ties go to the newest era."""
     cands = []
     for h, entry in known.items():
         if "detail" in entry:
-            theirs = form_hashes(entry["detail"])
-            n_diff = sum(theirs.get(k) != v for k, v in hashes.items() if k != "form")
+            n_diff = form_distance(entry["detail"], detail)
             cands.append((n_diff, entry.get("last_scan_utc") is not None,
                           entry.get("first_scan_utc") or "", h))
     if not cands:
@@ -567,6 +583,25 @@ def check_band(name: str, a: np.ndarray, valid: np.ndarray) -> None:
         raise BadScan(f"{name} median {med:.1f} K is outside {BT_RANGE}")
     if name in ("C01", "C02", "C03") and not REFL_RANGE[0] <= med <= REFL_RANGE[1]:
         raise BadScan(f"{name} median reflectance {med:.2f} is outside {REFL_RANGE}")
+
+
+# Near the equinoxes, GOES-19 CONUS scans around satellite midnight (about 05:00 UTC)
+# come in with a gap that moves through the scan, mostly in C07, for up to 45
+# minutes. In a weekly sample from Oct 2024 to Oct 2026 every such scan fell at 04:31
+# to 05:21 UTC between Mar 26 and Apr 16 or Aug 27 and Sep 17. The windows below run
+# to the nearest sampled days without it. Likely the sun near the imager's view.
+EQUINOX_GAP_HOURS = (4, 5)
+EQUINOX_GAP_DATES = (((3, 20), (4, 22)), ((8, 21), (9, 23)))
+
+
+def known_cause(when: datetime, reason: str) -> str | None:
+    """A known cause for a rejection, when its time and kind match one."""
+    md = (when.month, when.day)
+    if (" missing over " in reason and when.hour in EQUINOX_GAP_HOURS
+            and any(lo <= md <= hi for lo, hi in EQUINOX_GAP_DATES)):
+        return ("equinox-season gap near satellite midnight, seen every spring and fall "
+                "at 04:30 to 05:20 UTC; not a new fault")
+    return None
 
 
 def brightness_outliers(means: list[float], tol: float = 0.25) -> list[int]:
@@ -977,7 +1012,11 @@ def main() -> None:
             try:
                 im, when, form = render(key, lights, lon, lat, sampler, day, geom, hires, label)
             except BadScan as e:
-                rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e), "form": e.form})
+                rej = {"scan": key.rsplit("/", 1)[-1], "reason": str(e), "form": e.form}
+                cause = known_cause(scan_start(key), str(e))
+                if cause:
+                    rej["known_cause"] = cause
+                rejected.append(rej)
                 continue
             path = raw_dir / f"{i:04d}.png"
             im.save(path)
@@ -991,7 +1030,8 @@ def main() -> None:
         for n, r in enumerate(pool.map(job, enumerate(slots)), 1):
             results.append(r)
             for rej in r["rejected"]:
-                print(f"  rejected {rej['scan']}: {rej['reason']}", flush=True)
+                note = f" ({rej['known_cause']})" if rej.get("known_cause") else ""
+                print(f"  rejected {rej['scan']}: {rej['reason']}{note}", flush=True)
             if n % 10 == 0 or n == len(slots):
                 print(f"{n}/{len(slots)} {time.time() - t0:.0f} s", flush=True)
 

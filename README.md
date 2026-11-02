@@ -115,6 +115,13 @@ lists them, and the checks below cover the ones that can reach a single frame:
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
 
+Some failures recur and have a known cause; a rejection that matches one says so in the
+log and carries `known_cause` in `report.json`. So far there is one: for a few weeks
+around each equinox (late March to mid April, late August to mid September), scans
+near satellite midnight (04:30 to 05:20 UTC) come in with a gap that moves through the
+scan, mostly in the 3.9 µm band, for up to 45 minutes. Those scans are rejected like
+any other; slots with no good scan within one step are left out of the loop.
+
 ### File forms
 
 NOAA changes the form of the files now and then, without notice in the files
@@ -125,7 +132,9 @@ runs of one form under `scan_forms`, each marked known or new against `forms.jso
 
 A scan in a form not in `forms.json` is reported in the log, and as an annotation on a
 GitHub Actions run (a warning when all its scans rendered, an error when some failed).
-The report says what differs from the closest known form, line by line (for example
+The closest known form is the one with the fewest differing items (variables, bands,
+attributes), so a file with one band missing is compared with its own era's form. The
+report says what differs from it, line by line (for example
 `band layouts: chunks (250, 250) -> (52, 2500) in CMI_C01-C16 (16 bands)`), which of
 its scans rendered, and why any failed. Scans that fail a check keep their form, so a
 new form that breaks reading is still reported. The new form's full description is
