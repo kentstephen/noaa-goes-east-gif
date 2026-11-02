@@ -1,0 +1,68 @@
+# Opens or closes the "hero loop is stale" issue. Started by the watchdog Worker,
+# which checks the loops in R2 a few times a day:
+#
+# - state=stale: a loop on the site is two or more evenings behind. Opens the issue
+#   unless one is already open.
+# - state=current: both loops are current again. Closes the open issue.
+#
+# The issue is opened by github-actions[bot] rather than with the owner's token,
+# because GitHub does not notify people about their own activity. Watching the repo
+# (the default for its owner) is what sends the email.
+
+name: stale loop alert
+
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: "stale or current"
+        required: true
+      message:
+        description: "What the watchdog saw"
+        required: true
+
+concurrency:
+  group: alert
+  cancel-in-progress: false
+
+permissions:
+  issues: write
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      STATE: ${{ inputs.state }}
+      MESSAGE: ${{ inputs.message }}
+      TITLE: Hero loop is stale
+    steps:
+      - name: Open or close the issue
+        run: |
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" \
+            --json number --jq '.[0].number // empty')
+          case "$STATE" in
+            stale)
+              if [ -n "$open" ]; then
+                echo "Issue #$open is already open."
+              else
+                printf '%s\n\n%s\n' "$MESSAGE" \
+                  "The site keeps playing the last good loop. This issue closes by itself once a fresh loop is uploaded." \
+                  > body.md
+                gh issue create --title "$TITLE" --body-file body.md
+              fi
+              ;;
+            current)
+              if [ -n "$open" ]; then
+                gh issue close "$open" --comment "$MESSAGE"
+              else
+                echo "No open issue to close."
+              fi
+              ;;
+            *)
+              echo "state must be stale or current, got: $STATE"
+              exit 1
+              ;;
+          esac

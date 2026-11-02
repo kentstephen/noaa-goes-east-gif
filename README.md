@@ -146,6 +146,12 @@ month; a failed upgrade counts as this month's run and is not retried. If GitHub
 disabled either workflow for inactivity, it re-enables it first. On days the
 schedule works, it does nothing.
 
+If either loop is two or more evenings behind at the 18:15 UTC check, it starts
+`alert.yml`, which opens a "Hero loop is stale" issue as github-actions[bot] (GitHub
+emails the repo's watchers about new issues). Once both loops are current again, any
+check closes the issue the same way. Whether an alert is open is kept in R2 as
+`watchdog/alert.json`, so the alert workflow runs only when that changes.
+
 It needs a fine-grained GitHub token (this repo only, Actions read and write) stored
 as the Worker secret `GH_TOKEN`. Deploy with `cd watchdog && npx wrangler deploy`;
 see its runs with `npx wrangler tail`.
