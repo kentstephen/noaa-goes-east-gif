@@ -1,0 +1,529 @@
+{
+ "band layouts": {
+  "CMI_C01": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C02": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C03": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C04": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C05": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C06": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C07": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C08": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C09": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C10": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C11": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C12": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C13": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C14": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C15": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "CMI_C16": [
+   "int16",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 2}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian='little')",
+   "-1"
+  ],
+  "DQF_C01": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C02": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C03": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C04": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C05": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C06": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C07": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C08": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C09": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C10": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C11": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C12": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C13": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C14": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C15": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ],
+  "DQF_C16": [
+   "int8",
+   "(250, 250)",
+   "(Shuffle(codec_name='numcodecs.shuffle', codec_config={'elementsize': 1}), Zlib(codec_name='numcodecs.zlib', codec_config={'level': 1}))",
+   "BytesCodec(endian=None)",
+   "-1"
+  ]
+ },
+ "band scaling": {
+  "CMI_C01": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C02": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C03": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C04": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C05": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C06": [
+   "0.00031746001332066953",
+   "0.0",
+   "-1",
+   "1"
+  ],
+  "CMI_C07": [
+   "0.013096179813146591",
+   "197.30999755859375",
+   "-1",
+   "K"
+  ],
+  "CMI_C08": [
+   "0.042249858379364014",
+   "138.0500030517578",
+   "-1",
+   "K"
+  ],
+  "CMI_C09": [
+   "0.042339108884334564",
+   "137.6999969482422",
+   "-1",
+   "K"
+  ],
+  "CMI_C10": [
+   "0.04988918825984001",
+   "126.91000366210938",
+   "-1",
+   "K"
+  ],
+  "CMI_C11": [
+   "0.05216431990265846",
+   "127.69000244140625",
+   "-1",
+   "K"
+  ],
+  "CMI_C12": [
+   "0.047270338982343674",
+   "117.48999786376953",
+   "-1",
+   "K"
+  ],
+  "CMI_C13": [
+   "0.06145332008600235",
+   "89.62000274658203",
+   "-1",
+   "K"
+  ],
+  "CMI_C14": [
+   "0.059850748628377914",
+   "96.19000244140625",
+   "-1",
+   "K"
+  ],
+  "CMI_C15": [
+   "0.05956082046031952",
+   "97.37999725341797",
+   "-1",
+   "K"
+  ],
+  "CMI_C16": [
+   "0.055081531405448914",
+   "92.69999694824219",
+   "-1",
+   "K"
+  ]
+ },
+ "global attrs": {
+  "Conventions": "CF-1.7",
+  "Metadata_Conventions": "Unidata Dataset Discovery v1.0",
+  "cdm_data_type": "Image",
+  "institution": "DOC/NOAA/NESDIS > U.S. Department of Commerce, National Oceanic and Atmospheric Administration, National Environmental Satellite, Data, and Information Services",
+  "instrument_ID": "FM4",
+  "instrument_type": "GOES-R Series Advanced Baseline Imager (ABI)",
+  "iso_series_metadata_id": "8c9e8150-3692-11e3-aa6e-0800200c9a66",
+  "keywords": "ATMOSPHERE > ATMOSPHERIC RADIATION > REFLECTANCE, SPECTRAL/ENGINEERING > VISIBLE WAVELENGTHS > REFLECTANCE, SPECTRAL/ENGINEERING > INFRARED WAVELENGTHS > BRIGHTNESS TEMPERATURE",
+  "keywords_vocabulary": "NASA Global Change Master Directory (GCMD) Earth Science Keywords, Version 7.0.0.0.0",
+  "license": "Unclassified data.  Access is restricted to approved users only.",
+  "naming_authority": "gov.nesdis.noaa",
+  "orbital_slot": "GOES-East",
+  "platform_ID": "G19",
+  "processing_level": "National Aeronautics and Space Administration (NASA) L2",
+  "production_data_source": "Realtime",
+  "project": "GOES",
+  "scene_id": "CONUS",
+  "spatial_resolution": "2km at nadir",
+  "standard_name_vocabulary": "CF Standard Name Table (v35, 20 July 2016)",
+  "summary": "Multiple reflectance and emissive channel Cloud and Moisture Imagery Products are digital maps of clouds, moisture, and atmospheric windows at visible, near-IR, and IR bands.",
+  "title": "ABI L2 Cloud and Moisture Imagery"
+ },
+ "grid": [
+  2500,
+  1500,
+  -0.101332,
+  0.128212
+ ],
+ "projection": {
+  "grid_mapping_name": "geostationary",
+  "inverse_flattening": 298.2572221,
+  "latitude_of_projection_origin": 0.0,
+  "long_name": "GOES-R ABI fixed grid projection",
+  "longitude_of_projection_origin": -75.0,
+  "perspective_point_height": 35786023.0,
+  "semi_major_axis": 6378137.0,
+  "semi_minor_axis": 6356752.31414,
+  "sweep_angle_axis": "x"
+ },
+ "variables": [
+  "CMI_C01",
+  "CMI_C02",
+  "CMI_C03",
+  "CMI_C04",
+  "CMI_C05",
+  "CMI_C06",
+  "CMI_C07",
+  "CMI_C08",
+  "CMI_C09",
+  "CMI_C10",
+  "CMI_C11",
+  "CMI_C12",
+  "CMI_C13",
+  "CMI_C14",
+  "CMI_C15",
+  "CMI_C16",
+  "DQF_C01",
+  "DQF_C02",
+  "DQF_C03",
+  "DQF_C04",
+  "DQF_C05",
+  "DQF_C06",
+  "DQF_C07",
+  "DQF_C08",
+  "DQF_C09",
+  "DQF_C10",
+  "DQF_C11",
+  "DQF_C12",
+  "DQF_C13",
+  "DQF_C14",
+  "DQF_C15",
+  "DQF_C16",
+  "algorithm_product_version_container",
+  "band_id_C01",
+  "band_id_C02",
+  "band_id_C03",
+  "band_id_C04",
+  "band_id_C05",
+  "band_id_C06",
+  "band_id_C07",
+  "band_id_C08",
+  "band_id_C09",
+  "band_id_C10",
+  "band_id_C11",
+  "band_id_C12",
+  "band_id_C13",
+  "band_id_C14",
+  "band_id_C15",
+  "band_id_C16",
+  "band_wavelength_C01",
+  "band_wavelength_C02",
+  "band_wavelength_C03",
+  "band_wavelength_C04",
+  "band_wavelength_C05",
+  "band_wavelength_C06",
+  "band_wavelength_C07",
+  "band_wavelength_C08",
+  "band_wavelength_C09",
+  "band_wavelength_C10",
+  "band_wavelength_C11",
+  "band_wavelength_C12",
+  "band_wavelength_C13",
+  "band_wavelength_C14",
+  "band_wavelength_C15",
+  "band_wavelength_C16",
+  "dynamic_algorithm_input_data_container",
+  "geospatial_lat_lon_extent",
+  "goes_imager_projection",
+  "max_brightness_temperature_C07",
+  "max_brightness_temperature_C08",
+  "max_brightness_temperature_C09",
+  "max_brightness_temperature_C10",
+  "max_brightness_temperature_C11",
+  "max_brightness_temperature_C12",
+  "max_brightness_temperature_C13",
+  "max_brightness_temperature_C14",
+  "max_brightness_temperature_C15",
+  "max_brightness_temperature_C16",
+  "max_reflectance_factor_C01",
+  "max_reflectance_factor_C02",
+  "max_reflectance_factor_C03",
+  "max_reflectance_factor_C04",
+  "max_reflectance_factor_C05",
+  "max_reflectance_factor_C06",
+  "mean_brightness_temperature_C07",
+  "mean_brightness_temperature_C08",
+  "mean_brightness_temperature_C09",
+  "mean_brightness_temperature_C10",
+  "mean_brightness_temperature_C11",
+  "mean_brightness_temperature_C12",
+  "mean_brightness_temperature_C13",
+  "mean_brightness_temperature_C14",
+  "mean_brightness_temperature_C15",
+  "mean_brightness_temperature_C16",
+  "mean_reflectance_factor_C01",
+  "mean_reflectance_factor_C02",
+  "mean_reflectance_factor_C03",
+  "mean_reflectance_factor_C04",
+  "mean_reflectance_factor_C05",
+  "mean_reflectance_factor_C06",
+  "min_brightness_temperature_C07",
+  "min_brightness_temperature_C08",
+  "min_brightness_temperature_C09",
+  "min_brightness_temperature_C10",
+  "min_brightness_temperature_C11",
+  "min_brightness_temperature_C12",
+  "min_brightness_temperature_C13",
+  "min_brightness_temperature_C14",
+  "min_brightness_temperature_C15",
+  "min_brightness_temperature_C16",
+  "min_reflectance_factor_C01",
+  "min_reflectance_factor_C02",
+  "min_reflectance_factor_C03",
+  "min_reflectance_factor_C04",
+  "min_reflectance_factor_C05",
+  "min_reflectance_factor_C06",
+  "nominal_satellite_height",
+  "nominal_satellite_subpoint_lat",
+  "nominal_satellite_subpoint_lon",
+  "outlier_pixel_count_C01",
+  "outlier_pixel_count_C02",
+  "outlier_pixel_count_C03",
+  "outlier_pixel_count_C04",
+  "outlier_pixel_count_C05",
+  "outlier_pixel_count_C06",
+  "outlier_pixel_count_C07",
+  "outlier_pixel_count_C08",
+  "outlier_pixel_count_C09",
+  "outlier_pixel_count_C10",
+  "outlier_pixel_count_C11",
+  "outlier_pixel_count_C12",
+  "outlier_pixel_count_C13",
+  "outlier_pixel_count_C14",
+  "outlier_pixel_count_C15",
+  "outlier_pixel_count_C16",
+  "percent_uncorrectable_GRB_errors",
+  "percent_uncorrectable_L0_errors",
+  "std_dev_brightness_temperature_C07",
+  "std_dev_brightness_temperature_C08",
+  "std_dev_brightness_temperature_C09",
+  "std_dev_brightness_temperature_C10",
+  "std_dev_brightness_temperature_C11",
+  "std_dev_brightness_temperature_C12",
+  "std_dev_brightness_temperature_C13",
+  "std_dev_brightness_temperature_C14",
+  "std_dev_brightness_temperature_C15",
+  "std_dev_brightness_temperature_C16",
+  "std_dev_reflectance_factor_C01",
+  "std_dev_reflectance_factor_C02",
+  "std_dev_reflectance_factor_C03",
+  "std_dev_reflectance_factor_C04",
+  "std_dev_reflectance_factor_C05",
+  "std_dev_reflectance_factor_C06",
+  "t",
+  "time_bounds",
+  "x",
+  "x_image",
+  "x_image_bounds",
+  "y",
+  "y_image",
+  "y_image_bounds"
+ ]
+}

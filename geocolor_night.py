@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import threading
 import time
+import traceback
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -193,53 +194,220 @@ VOLATILE_ATTRS = {"date_created", "time_coverage_start", "time_coverage_end", "i
                   "dataset_name", "timeline_id", "orbital_slot_comment"}
 OPERATIONAL_ATTRS = {"production_cluster", "production_site", "production_environment"}
 FORMS_FILE = Path(__file__).with_name("forms.json")
+# Full description of each known form (forms/<form>.json), so a new form can be
+# described by what differs, not only by its hash.
+FORMS_DIR = Path(__file__).with_name("forms")
+LAYOUT_FIELDS = ("dtype", "chunks", "compressors", "serializer", "fill_value")
+SCALING_FIELDS = ("scale_factor", "add_offset", "_FillValue", "units")
 
 
 def _short_hash(o) -> str:
     return hashlib.sha1(json.dumps(o, sort_keys=True, default=str).encode()).hexdigest()[:10]
 
 
-def scan_form(ds: xr.Dataset) -> dict[str, str]:
-    """Short hashes of each part of a file's form, from metadata already read.
-
-    NOAA changes the form of the files now and then (variable names, chunk layout,
-    projection, scaling). Each run of one form is an era; a scan in a new form shows
-    up in report.json, so a change is noticed when it lands rather than later.
-    """
+def form_detail(ds: xr.Dataset) -> dict:
+    """Each part of a file's form as plain JSON, from metadata already read:
+    variable names, each band's storage (dtype, chunks, codecs) and scaling, the
+    projection, the grid, and the global attributes that do not change per scan."""
     bands = sorted(n for n in ds.data_vars if n[:5] in ("CMI_C", "DQF_C"))
-    layout = {n: [str(ds[n].encoding.get(k)) for k in ("dtype", "chunks", "compressors", "serializer",
-                                                         "fill_value")] for n in bands}
-    scaling = {n: [str(ds[n].encoding.get(k, ds[n].attrs.get(k)))
-                   for k in ("scale_factor", "add_offset", "_FillValue", "units")]
+    layout = {n: [str(ds[n].encoding.get(k)) for k in LAYOUT_FIELDS] for n in bands}
+    scaling = {n: [str(ds[n].encoding.get(k, ds[n].attrs.get(k))) for k in SCALING_FIELDS]
                for n in bands if n.startswith("CMI_")}
     proj = dict(ds["goes_imager_projection"].attrs) if "goes_imager_projection" in ds else {}
     grid = [ds.sizes.get("x"), ds.sizes.get("y")]
     if "x" in ds and "y" in ds:
         grid += [round(float(ds.x[0]), 6), round(float(ds.y[0]), 6)]
     attrs = {k: v for k, v in ds.attrs.items() if k not in VOLATILE_ATTRS | OPERATIONAL_ATTRS}
-    parts = {"variables": _short_hash(sorted(ds.variables)), "band layouts": _short_hash(layout),
-             "band scaling": _short_hash(scaling), "projection": _short_hash(proj),
-             "grid": _short_hash(grid), "global attrs": _short_hash(attrs)}
+    detail = {"variables": sorted(ds.variables), "band layouts": layout, "band scaling": scaling,
+              "projection": proj, "grid": grid, "global attrs": attrs}
+    # Through JSON once, so numpy values compare equal to the stored copies.
+    return json.loads(json.dumps(detail, default=str))
+
+
+def form_hashes(detail: dict) -> dict[str, str]:
+    parts = {k: _short_hash(v) for k, v in detail.items()}
     return {"form": _short_hash(parts), **parts}
 
 
-def form_runs(results: list[dict]) -> list[dict]:
-    """Consecutive scans in one form, in time order, each marked known or new against
-    forms.json (the forms seen so far in the archive)."""
+def scan_form(ds: xr.Dataset) -> dict[str, str]:
+    """Short hashes of each part of a file's form, and of the whole.
+
+    NOAA changes the form of the files now and then (variable names, chunk layout,
+    projection, scaling). Each run of one form is an era; a scan in a new form shows
+    up in the log and report.json, so a change is noticed when it lands.
+    """
+    return form_hashes(form_detail(ds))
+
+
+def _clip(v, n: int = 100) -> str:
+    s = v if isinstance(v, str) else json.dumps(v)
+    return s if len(s) <= n else s[:n - 3] + "..."
+
+
+def _changed(a, b, n: int = 100) -> str:
+    """'a -> b', with long values cut to the part that differs plus some context."""
+    a, b = (v if isinstance(v, str) else json.dumps(v) for v in (a, b))
+    if len(a) <= n and len(b) <= n:
+        return f"{a} -> {b}"
+    pre = 0
+    while pre < min(len(a), len(b)) and a[pre] == b[pre]:
+        pre += 1
+    suf = 0
+    while suf < min(len(a), len(b)) - pre and a[-1 - suf] == b[-1 - suf]:
+        suf += 1
+    ctx = 30
+    def cut(v: str) -> str:
+        lo, hi = max(pre - ctx, 0), min(len(v) - suf + ctx, len(v))
+        return ("..." if lo else "") + v[lo:hi] + ("..." if hi < len(v) else "")
+    return f"{cut(a)} -> {cut(b)}"
+
+
+def _band_list(names: list[str]) -> str:
+    """CMI_C01, CMI_C02, ... CMI_C16 -> "CMI_C01-C16"."""
+    groups: dict[str, list[int]] = {}
+    for n in names:
+        groups.setdefault(n[:5], []).append(int(n[5:]))
+    out = []
+    for prefix, nums in groups.items():
+        nums.sort()
+        lo = prev = nums[0]
+        for x in nums[1:] + [None]:
+            if x is not None and x == prev + 1:
+                prev = x
+                continue
+            out.append(f"{prefix}{lo:02d}" + (f"-C{prev:02d}" if prev != lo else ""))
+            if x is not None:
+                lo = prev = x
+    return ", ".join(out) + f" ({len(names)} bands)"
+
+
+def form_differences(old: dict, new: dict) -> list[str]:
+    """What differs between two form details, one line per change."""
+    out = []
+    ov, nv = set(old.get("variables", [])), set(new.get("variables", []))
+    if nv - ov:
+        out.append(f"variables added: {', '.join(sorted(nv - ov))}")
+    if ov - nv:
+        out.append(f"variables removed: {', '.join(sorted(ov - nv))}")
+    for part, fields in (("band layouts", LAYOUT_FIELDS), ("band scaling", SCALING_FIELDS)):
+        o, n = old.get(part, {}), new.get(part, {})
+        changes: dict[tuple, list[str]] = {}
+        for b in sorted(set(o) & set(n)):  # bands in only one are under variables
+            for f, a, c in zip(fields, o[b], n[b]):
+                if a != c:
+                    changes.setdefault((f, a, c), []).append(b)
+        for (f, a, c), bands in changes.items():
+            out.append(f"{part}: {f} {_changed(a, c)} in {_band_list(bands)}")
+    for part in ("projection", "global attrs"):
+        o, n = old.get(part, {}), new.get(part, {})
+        for k in sorted(set(o) | set(n)):
+            if k not in o:
+                out.append(f"{part}: {k} added, {_clip(n[k])}")
+            elif k not in n:
+                out.append(f"{part}: {k} removed, was {_clip(o[k])}")
+            elif o[k] != n[k]:
+                out.append(f"{part}: {k} {_changed(o[k], n[k])}")
+    if old.get("grid") != new.get("grid"):
+        out.append(f"grid (x size, y size, first x, first y): {old.get('grid')} -> {new.get('grid')}")
+    for part in sorted(set(old) ^ set(new)):
+        out.append(f"part {part!r} only in the {'new' if part in new else 'known'} form")
+    return out
+
+
+def known_forms() -> dict[str, dict]:
+    """forms.json, each entry with its stored detail if forms/<form>.json exists."""
     known = json.loads(FORMS_FILE.read_text()) if FORMS_FILE.exists() else {}
+    for h, entry in known.items():
+        path = FORMS_DIR / f"{h}.json"
+        if path.exists():
+            entry["detail"] = json.loads(path.read_text())
+    return known
+
+
+def closest_known(detail: dict, known: dict[str, dict]) -> tuple[str, dict] | None:
+    """The known form with the fewest differing parts; ties go to the newest era."""
+    hashes = form_hashes(detail)
+    cands = []
+    for h, entry in known.items():
+        if "detail" in entry:
+            theirs = form_hashes(entry["detail"])
+            n_diff = sum(theirs.get(k) != v for k, v in hashes.items() if k != "form")
+            cands.append((n_diff, entry.get("last_scan_utc") is not None,
+                          entry.get("first_scan_utc") or "", h))
+    if not cands:
+        return None
+    cands.sort(key=lambda c: c[2], reverse=True)  # newest era first among equals
+    h = min(cands, key=lambda c: c[:2])[3]
+    return h, known[h]
+
+
+def scan_stamp(name: str) -> str:
+    """The start stamp of a scan file name, for time order across scan modes."""
+    return name.split("_s", 1)[1][:14] if "_s" in name else name
+
+
+def form_runs(results: list[dict]) -> list[dict]:
+    """Consecutive scans in one form, in time order, rendered or rejected, each
+    marked known or new against forms.json. A new form carries what differs from
+    the closest known form."""
+    known = known_forms()
+    seen = []  # (scan, form, rejection reason or None)
+    for r in results:
+        for rej in r["rejected"]:
+            if rej.get("form"):
+                seen.append((rej["scan"], rej["form"], rej["reason"]))
+        if r.get("form"):
+            seen.append((r["scan"], r["form"], None))
     runs = []
-    for r in sorted((r for r in results if r.get("form")), key=lambda r: r["scan"]):
-        f = r["form"]
-        if runs and runs[-1]["form"] == f["form"]:
-            runs[-1]["last_scan"], runs[-1]["scans"] = r["scan"], runs[-1]["scans"] + 1
-            continue
-        changed = [k for k in f if k != "form" and runs and runs[-1]["parts"][k] != f[k]]
-        runs.append({"form": f["form"], "known": f["form"] in known,
-                     "era": known.get(f["form"], {}).get("era"),
-                     "first_scan": r["scan"], "last_scan": r["scan"], "scans": 1,
-                     "changed_from_previous": changed,
-                     "parts": {k: v for k, v in f.items() if k != "form"}})
+    for scan, f, reason in sorted(seen, key=lambda t: scan_stamp(t[0])):
+        if not (runs and runs[-1]["form"] == f["form"]):
+            prev = runs[-1] if runs else None
+            entry = known.get(f["form"], {})
+            run = {"form": f["form"], "known": f["form"] in known, "era": entry.get("era"),
+                   "first_scan": scan, "last_scan": scan, "scans": 0, "rendered": 0,
+                   "rejected": [],
+                   "previous_form": prev["form"] if prev else None,
+                   "previous_scan": prev["last_scan"] if prev else None,
+                   "changed_from_previous": [k for k in f["parts"]
+                                             if prev and prev["parts"][k] != f["parts"][k]],
+                   "parts": f["parts"]}
+            if not run["known"]:
+                match = closest_known(f["detail"], known)
+                if match:
+                    h, e = match
+                    run["closest_known"] = {"form": h, "era": e.get("era")}
+                    run["differences"] = form_differences(e["detail"], f["detail"])
+                if prev and prev["form"] in known and "detail" in known[prev["form"]] \
+                        and prev["form"] != run.get("closest_known", {}).get("form"):
+                    run["differences_from_previous"] = form_differences(
+                        known[prev["form"]]["detail"], f["detail"])
+                run["detail"] = f["detail"]
+            runs.append(run)
+        run = runs[-1]
+        run["last_scan"], run["scans"] = scan, run["scans"] + 1
+        if reason is None:
+            run["rendered"] += 1
+        else:
+            run["rejected"].append({"scan": scan, "reason": reason})
     return runs
+
+
+def describe_error(e: BaseException) -> str:
+    """Exception type and message, where it was raised, and where in this script."""
+    frames = traceback.extract_tb(e.__traceback__)
+    # Some libraries append a long debug dump after a blank line; keep the summary.
+    msg = f"{type(e).__name__}: {_clip(str(e).split(chr(10) * 2)[0].strip(), 300)}"
+    if frames:
+        f = frames[-1]
+        msg += f" (raised at {Path(f.filename).name}:{f.lineno} in {f.name}"
+        own = [f for f in frames if f.filename == __file__]
+        if own and own[-1] is not frames[-1]:
+            msg += f", from {own[-1].name} line {own[-1].lineno}: {own[-1].line}"
+        msg += ")"
+    cause = e.__cause__ or e.__context__
+    if cause is not None:
+        msg += f"; caused by {type(cause).__name__}: {_clip(str(cause).split(chr(10) * 2)[0], 200)}"
+    return msg
 
 
 def read_bands(key: str, sampler: Sampler, names: list[str]) -> tuple[dict[str, np.ndarray], dict]:
@@ -249,21 +417,29 @@ def read_bands(key: str, sampler: Sampler, names: list[str]) -> tuple[dict[str, 
     attribute) becomes BadScan, so the scan is swapped for a neighbor rather than
     stopping the run.
     """
+    form = None
     try:
         ds = open_scan(key)
-        form = scan_form(ds)
+        detail = form_detail(ds)
+        parts = form_hashes(detail)
+        form = {"form": parts.pop("form"), "parts": parts, "detail": detail}
         check_time(ds, key)
         if sampler.key != (float(ds.x[0]), float(ds.y[0]), ds.sizes["x"], ds.sizes["y"]):
-            raise BadScan("scan grid differs from the first scan")
+            raise BadScan(f"scan grid {ds.sizes['x']} x {ds.sizes['y']} from "
+                          f"({float(ds.x[0]):.6f}, {float(ds.y[0]):.6f}) differs from the first "
+                          f"scan's {sampler.key[2]} x {sampler.key[3]} from "
+                          f"({sampler.key[0]:.6f}, {sampler.key[1]:.6f})")
         absent = [n for n in names if f"CMI_{n}" not in ds]
         if absent:
-            raise BadScan(f"{', '.join(absent)} absent from the file")
+            raise BadScan(f"{', '.join(f'CMI_{n}' for n in absent)} absent from the file")
         win = sampler.window(ds)
         return {n: sampler.warp(win[f"CMI_{n}"].values) for n in names}, form
-    except BadScan:
+    except BadScan as e:
+        e.form = e.form or form
         raise
     except Exception as e:
-        raise BadScan(f"unreadable ({type(e).__name__}: {e})") from e
+        stage = "opening the file" if form is None else "reading the bands"
+        raise BadScan(f"unreadable while {stage}: {describe_error(e)}", form=form) from e
 
 
 # ---------------------------------------------------------------- geometry
@@ -363,7 +539,12 @@ def rayleigh():
 # ---------------------------------------------------------------- quality checks
 
 class BadScan(ValueError):
-    """A scan that fails a quality check and should not become a frame."""
+    """A scan that fails a quality check and should not become a frame. Carries the
+    file's form when it was read, so a new form that fails is still reported."""
+
+    def __init__(self, msg: str, form: dict | None = None):
+        super().__init__(msg)
+        self.form = form
 
 
 # Share of the box a band may be missing before the scan is rejected. A failed band
@@ -606,7 +787,11 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     bands = {}
     raw, form = read_bands(key, sampler, names)
     for n, a in raw.items():  # fill values stay NaN for the check
-        check_band(n, a, sampler.valid)
+        try:
+            check_band(n, a, sampler.valid)
+        except BadScan as e:
+            e.form = form
+            raise
         bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[sampler.valid])))
     red_ratio = None
     if lit and hires is not None:
@@ -643,6 +828,55 @@ def write_outputs(frames_dir: Path, out: Path, formats: set[str], fps: float) ->
                    for f in frames]
             pal[0].save(out / "east_night.gif", save_all=True, append_images=pal[1:],
                         duration=ms, loop=0, optimize=True)
+
+
+def _annotate(level: str, title: str, lines: list[str]) -> None:
+    """Print lines to the log; on GitHub Actions also as one annotation on the run,
+    which keeps all the lines (readable with `gh api .../check-runs/<id>/annotations`)."""
+    for line in lines:
+        print(f"  {line}", flush=True)
+    if os.environ.get("GITHUB_ACTIONS"):
+        def esc(t: str, prop: bool = False) -> str:
+            t = t.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            return t.replace(":", "%3A").replace(",", "%2C") if prop else t
+        print(f"::{level} title={esc(title, True)}::{esc(chr(10).join(lines))}", flush=True)
+
+
+def report_form(f: dict, out: Path) -> None:
+    """Log one run of scans in one form. A known form gets a line only where it
+    changed; a new form gets what differs from the closest known form, which of its
+    scans rendered or failed and why, and its full detail saved to accept it."""
+    if f["known"]:
+        if f["previous_form"]:
+            print(f"  file form changed at {f['first_scan']} to {f['form']} ({f['era']}), "
+                  f"from {f['previous_form']} after {f['previous_scan']}; parts changed: "
+                  f"{', '.join(f['changed_from_previous'])}", flush=True)
+        return
+    n_rej = len(f["rejected"])
+    lines = [f"File form {f['form']} is not in forms.json.",
+             f"Seen in {f['scans']} scan(s), {f['first_scan']} to {f['last_scan']}: "
+             f"{f['rendered']} rendered, {n_rej} rejected."]
+    if f["previous_form"]:
+        lines.append(f"Previous scan {f['previous_scan']} was in form {f['previous_form']}.")
+    if "closest_known" in f:
+        c = f["closest_known"]
+        lines.append(f"Differences from the closest known form {c['form']} ({c['era']}):")
+        lines += [f"  {d}" for d in f["differences"]] or ["  none in the stored detail"]
+    else:
+        lines.append(f"No stored detail of a known form to compare with ({FORMS_DIR.name}/ is empty).")
+    if "differences_from_previous" in f:
+        lines.append(f"Differences from the previous scan's form {f['previous_form']}:")
+        lines += [f"  {d}" for d in f["differences_from_previous"]]
+    for x in f["rejected"]:
+        lines.append(f"Rejected {x['scan']}: {x['reason']}")
+    path = out / "forms" / f"{f['form']}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(f["detail"], indent=1, sort_keys=True))
+    lines.append(f"Full detail saved to {path}. If the form is fine, accept it by adding it "
+                 f"to forms.json and copying that file to {FORMS_DIR.name}/.")
+    level = "error" if n_rej else "warning"
+    what = "and some of its scans failed" if n_rej else "all its scans rendered"
+    _annotate(level, f"New file form {f['form']}: {what}", lines)
 
 
 def main() -> None:
@@ -725,7 +959,7 @@ def main() -> None:
             sampler = Sampler(open_scan(key), lon, lat)
             break
         except Exception as e:
-            print(f"  grid not read from {key.rsplit('/', 1)[-1]}: {e}", flush=True)
+            print(f"  grid not read from {key.rsplit('/', 1)[-1]}: {describe_error(e)}", flush=True)
     if sampler is None:
         raise SystemExit("no scan in the window could be opened")
     geom = Geometry(lon, lat, sampler.sat_lon) if day else None
@@ -743,7 +977,7 @@ def main() -> None:
             try:
                 im, when, form = render(key, lights, lon, lat, sampler, day, geom, hires, label)
             except BadScan as e:
-                rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e)})
+                rejected.append({"scan": key.rsplit("/", 1)[-1], "reason": str(e), "form": e.form})
                 continue
             path = raw_dir / f"{i:04d}.png"
             im.save(path)
@@ -774,23 +1008,26 @@ def main() -> None:
     final = [r for r in kept if not r.get("outlier")]
     dropped = len(slots) - len(final)
     def slim(r: dict) -> dict:
-        return {k: v for k, v in r.items() if k != "form"}
+        r = {k: v for k, v in r.items() if k != "form"}
+        if r.get("rejected"):
+            r["rejected"] = [{k: v for k, v in x.items() if k != "form"} for x in r["rejected"]]
+        return r
 
     forms = form_runs(results)
     for f in forms:
-        if f["changed_from_previous"]:
-            print(f"  scan form changed at {f['first_scan']}: {', '.join(f['changed_from_previous'])}")
-        if not f["known"]:
-            msg = f"scan form {f['form']} is not in forms.json (first {f['first_scan']})"
-            # A warning annotation on the GitHub Actions run; a plain line elsewhere.
-            print(f"::warning::{msg}" if os.environ.get("GITHUB_ACTIONS") else f"  new {msg}", flush=True)
+        report_form(f, args.out)
+    unread = [x for r in results for x in r["rejected"] if not x.get("form")]
+    if unread:
+        print(f"  {len(unread)} scan(s) could not be opened, so their form is unknown:")
+        for x in unread:
+            print(f"    {x['scan']}: {x['reason']}")
     report = {
         "window_utc": [start.isoformat(), end.isoformat()],
         "slots": len(slots), "frames": len(final), "dropped": dropped,
         "swapped": [slim(r) for r in kept if r["rejected"]],
         "unfilled": [slim(r) for r in results if not r["scan"]],
         "outliers": [slim(r) for r in kept if r.get("outlier")],
-        "scan_forms": forms,
+        "scan_forms": [{k: v for k, v in f.items() if k != "detail"} for f in forms],
     }
     (args.out / "report.json").write_text(json.dumps(report, indent=2))
     print(f"quality: {len(final)}/{len(slots)} frames kept, {len(report['swapped'])} swapped, "
