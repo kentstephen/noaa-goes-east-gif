@@ -1,0 +1,20 @@
+{
+  "4ee984aba0": {
+    "era": "test position",
+    "first_scan_utc": "2024-10-10",
+    "last_scan_utc": "2025-03-20T13:06",
+    "note": "Post-launch checkout at 89.5 W (orbital_slot GOES-Test). No files 2025-03-21 to 2025-03-31 while the satellite moved east."
+  },
+  "673459ee7a": {
+    "era": "operational, tiles",
+    "first_scan_utc": "2025-04-01T19:31",
+    "last_scan_utc": "2026-07-09T17:11",
+    "note": "75.2 W (orbital_slot GOES-East). Grid and projection differ from the test position. Bands stored in 250 x 250 chunks."
+  },
+  "2f0bab9f63": {
+    "era": "operational, strips",
+    "first_scan_utc": "2026-07-09T17:16",
+    "last_scan_utc": null,
+    "note": "production_site changed to GCCS. dynamic_algorithm_input_data_container renamed algorithm_dynamic_input_data_container; bands stored in full-width strips (52 rows, 104 for DQF). GOES-18 changed on the same scan."
+  }
+}

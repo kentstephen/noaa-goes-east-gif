@@ -133,7 +133,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reports
-          path: out/*/report.json
+          path: |
+            out/*/report.json
+            out/*/forms/*.json
           retention-days: 7
 
       - name: Fail the run if a loop was not replaced

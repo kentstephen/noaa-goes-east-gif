@@ -91,12 +91,21 @@ The Rayleigh tables (about 60 MB) download on first use and are cached by pyspec
 
 ## Bad frames
 
-Scans sometimes arrive with a band missing (for example, the 3.9 µm band filled
-entirely with fill values), which would flash a whole frame. Each run checks for this:
+Scans sometimes arrive with a band missing, which would flash a whole frame. On
+GOES-19 we have seen the band present but empty (the 3.9 µm band all fill values, Oct
+28, 2026, 09:11 and 09:16 UTC). On GOES-16 a band has also been absent from the file
+altogether. NOAA's files drift in other ways too; the
+[log kept while indexing the GOES-16 archive](https://gist.github.com/TomNicholas/4c441c1e69ada4d2c1e0abe35262e007#file-goes_data_inconsistencies-md)
+lists them, and the checks below cover the ones that can reach a single frame:
 
-- **Per scan:** each band must cover at least 95% of the box, and the infrared median
-  must be a plausible temperature. A failed scan is swapped for the nearest good scan
-  within one step.
+- **Listing:** aborted scans (placeholder files whose start and end stamps are equal)
+  are skipped, and a scan listed twice or reprocessed keeps only its latest file.
+- **Per scan:** a band absent from the file, a file that can't be read (such as a
+  corrupted chunk), or a time inside the file more than 10 minutes from its name fails
+  the scan. Each band must cover at least 95% of the box, the infrared median must be
+  a plausible temperature, and the visible median a plausible reflectance. A failed
+  scan is swapped for the nearest good scan within one step. The grid comes from the
+  first scan that opens.
 - **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
   is dropped.
 - **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
@@ -105,6 +114,32 @@ entirely with fill values), which would flash a whole frame. Each run checks for
 
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
+
+### File forms
+
+NOAA changes the form of the files now and then, without notice in the files
+themselves. Each scan's form (variable names, each band's dtype, chunks, codecs and
+scaling, projection, grid, global attributes) is hashed, and `report.json` lists the
+runs of one form under `scan_forms`, each marked known or new against `forms.json`.
+`forms/<form>.json` holds the full description of each known form.
+
+A scan in a form not in `forms.json` is reported in the log, and as an annotation on a
+GitHub Actions run (a warning when all its scans rendered, an error when some failed).
+The report says what differs from the closest known form, line by line (for example
+`band layouts: chunks (250, 250) -> (52, 2500) in CMI_C01-C16 (16 bands)`), which of
+its scans rendered, and why any failed. Scans that fail a check keep their form, so a
+new form that breaks reading is still reported. The new form's full description is
+saved to `<out>/forms/<form>.json` (in the run's `reports` artifact); to accept the
+form, add it to `forms.json` and copy that file to `forms/`. The annotations can be
+read as JSON with `gh api repos/<owner>/<repo>/check-runs/<job id>/annotations`.
+
+The run still renders, since each file is read on its own. The GOES-19 forms so far:
+
+| Form | Scans (UTC) | What changed |
+|---|---|---|
+| test position | 2024-10-10 to 2025-03-20 13:06 | 89.5 W checkout; no files Mar 21 to 31 while the satellite moved |
+| operational, tiles | 2025-04-01 19:31 to 2026-07-09 17:11 | 75.2 W: new grid and projection |
+| operational, strips | 2026-07-09 17:16 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles; Zlib level 1 raised to 5. GOES-18 changed on the same scan |
 
 ## Daily job
 
