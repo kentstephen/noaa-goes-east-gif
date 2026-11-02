@@ -73,10 +73,12 @@ jobs:
       - name: Make poster frames
         if: inputs.restore == ''
         run: |
+          # The poster is the first frame (daylight): the loop opens in day, and
+          # the poster is what shows while the video loads.
           for v in desktop mobile; do
-            last=$(ls out/$v/frames/*.png 2>/dev/null | tail -1) || true
-            if [ -f out/$v/east_night.mp4 ] && [ -n "$last" ]; then
-              ffmpeg -y -loglevel error -i "$last" -q:v 3 out/$v/poster.jpg
+            first=$(ls out/$v/frames/*.png 2>/dev/null | head -1) || true
+            if [ -f out/$v/east_night.mp4 ] && [ -n "$first" ]; then
+              ffmpeg -y -loglevel error -i "$first" -q:v 3 out/$v/poster.jpg
             fi
           done
 
