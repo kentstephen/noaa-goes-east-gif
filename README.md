@@ -139,7 +139,7 @@ The run still renders, since each file is read on its own. The GOES-19 forms so 
 |---|---|---|
 | test position | 2024-10-10 to 2025-03-20 13:06 | 89.5 W checkout; no files Mar 21 to 31 while the satellite moved |
 | operational, tiles | 2025-04-01 19:31 to 2026-07-09 17:11 | 75.2 W: new grid and projection |
-| operational, strips | 2026-07-09 17:16 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles; Zlib level 1 raised to 5. GOES-18 changed on the same scan |
+| operational, strips | 2026-07-09 17:06 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles; Zlib level 1 raised to 5. GOES-18 changed on the same scan. 17:06 and 17:11 were written in both forms; the later tiles copies are the ones read |
 
 ## Daily job
 

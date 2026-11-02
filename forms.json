@@ -13,8 +13,8 @@
   },
   "2f0bab9f63": {
     "era": "operational, strips",
-    "first_scan_utc": "2026-07-09T17:16",
+    "first_scan_utc": "2026-07-09T17:06",
     "last_scan_utc": null,
-    "note": "production_site changed to GCCS. dynamic_algorithm_input_data_container renamed algorithm_dynamic_input_data_container; bands stored in full-width strips (52 rows, 104 for DQF). GOES-18 changed on the same scan."
+    "note": "production_site changed to GCCS. Scans 17:06 and 17:11 were written in both forms during the handover; the tiles copies were created later, so those are the ones read. dynamic_algorithm_input_data_container renamed algorithm_dynamic_input_data_container; bands stored in full-width strips (52 rows, 104 for DQF). GOES-18 changed on the same scan."
   }
 }
