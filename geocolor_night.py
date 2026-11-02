@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import re
 import resource
 import sys
 import shutil
@@ -103,7 +104,32 @@ def list_keys(product: str, start: datetime, end: datetime) -> list[str]:
         for batch in obstore.list(s3, prefix=f"{product}/{hour:%Y/%j/%H}/"):
             keys += [o["path"] for o in batch]
         hour += timedelta(hours=1)
-    return sorted(keys)
+    return usable_keys(keys)
+
+
+STAMPS = re.compile(r"-(M\d[A-Z0-9]*)_G\d+_s(\d{14})_e(\d{14})_c(\d{14})")
+
+
+def usable_keys(keys: list[str]) -> list[str]:
+    """Drop aborted scans and duplicate listings, sorted by scan start.
+
+    An aborted scan leaves a placeholder file whose start and end stamps are equal.
+    A scan listed twice (NOAA has put the same file under two prefixes, and a
+    reprocessed file shares its scan start) keeps only the latest created file.
+    """
+    latest: dict[tuple[str, str], tuple[str, str]] = {}
+    for k in keys:
+        m = STAMPS.search(k)
+        if m is None:
+            continue
+        mode, s, e, c = m.groups()
+        if s == e:
+            print(f"aborted scan skipped: {k.rsplit('/', 1)[-1]}")
+            continue
+        band = mode[2:]  # "C02" in a single-band file's mode token, "" in the multiband files
+        if (band, s) not in latest or c > latest[(band, s)][0]:
+            latest[(band, s)] = (c, k)
+    return sorted((k for _, k in latest.values()), key=lambda k: STAMPS.search(k).group(2))
 
 
 def list_scans(start: datetime, end: datetime, every_min: int) -> list[list[str]]:
@@ -144,6 +170,42 @@ def scan_start(key: str) -> datetime:
 def open_scan(key: str) -> xr.Dataset:
     ms = HDFParser()(url=f"{ORIGIN}/{key}", registry=registry)
     return xr.open_zarr(ms, consolidated=False, zarr_format=3, decode_times=False)
+
+
+J2000 = datetime(2000, 1, 1, 12, tzinfo=timezone.utc)
+
+
+def check_time(ds: xr.Dataset, key: str) -> None:
+    """The scan time inside the file must match the file name. An aborted scan's
+    placeholder carries a time near 2000-01-01."""
+    if "t" not in ds:
+        return
+    t = J2000 + timedelta(seconds=float(ds["t"].values))
+    if abs(t - scan_start(key)) > timedelta(minutes=10):
+        raise BadScan(f"time inside the file ({t:%Y-%m-%d %H:%M} UTC) does not match its name")
+
+
+def read_bands(key: str, sampler: Sampler, names: list[str]) -> dict[str, np.ndarray]:
+    """The named bands over the box, warped to the output grid.
+
+    Anything wrong with the file itself (a band absent, a corrupted chunk, a missing
+    attribute) becomes BadScan, so the scan is swapped for a neighbor rather than
+    stopping the run.
+    """
+    try:
+        ds = open_scan(key)
+        check_time(ds, key)
+        if sampler.key != (float(ds.x[0]), float(ds.y[0]), ds.sizes["x"], ds.sizes["y"]):
+            raise BadScan("scan grid differs from the first scan")
+        absent = [n for n in names if f"CMI_{n}" not in ds]
+        if absent:
+            raise BadScan(f"{', '.join(absent)} absent from the file")
+        win = sampler.window(ds)
+        return {n: sampler.warp(win[f"CMI_{n}"].values) for n in names}
+    except BadScan:
+        raise
+    except Exception as e:
+        raise BadScan(f"unreadable ({type(e).__name__}: {e})") from e
 
 
 # ---------------------------------------------------------------- geometry
@@ -251,6 +313,9 @@ class BadScan(ValueError):
 MAX_MISSING = 0.05
 # Plausible brightness temperatures, kelvin, for the median over the box.
 BT_RANGE = (180.0, 320.0)
+# Plausible reflectance factors for the median over the box. Catches a band whose
+# scaling attributes are missing or changed, which would leave raw counts.
+REFL_RANGE = (-0.05, 1.5)
 
 
 def check_band(name: str, a: np.ndarray, valid: np.ndarray) -> None:
@@ -258,10 +323,11 @@ def check_band(name: str, a: np.ndarray, valid: np.ndarray) -> None:
     missing = float(np.mean(~np.isfinite(vals))) if vals.size else 1.0
     if missing > MAX_MISSING:
         raise BadScan(f"{name} missing over {missing:.0%} of the box")
-    if name in ("C07", "C13"):
-        med = float(np.nanmedian(vals))
-        if not BT_RANGE[0] <= med <= BT_RANGE[1]:
-            raise BadScan(f"{name} median {med:.1f} K is outside {BT_RANGE}")
+    med = float(np.nanmedian(vals))
+    if name in ("C07", "C13") and not BT_RANGE[0] <= med <= BT_RANGE[1]:
+        raise BadScan(f"{name} median {med:.1f} K is outside {BT_RANGE}")
+    if name in ("C01", "C02", "C03") and not REFL_RANGE[0] <= med <= REFL_RANGE[1]:
+        raise BadScan(f"{name} median reflectance {med:.2f} is outside {REFL_RANGE}")
 
 
 def brightness_outliers(means: list[float], tol: float = 0.25) -> list[int]:
@@ -473,19 +539,14 @@ def draw_label(im: Image.Image, text: str, corner: str, aspect: float | None) ->
 def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampler: Sampler,
            day: bool, geom: Geometry | None, hires: HiresRed | None,
            label: tuple[str, float | None] = ("bottom-left", None)) -> tuple[Image.Image, datetime]:
-    ds = open_scan(key)
-    if sampler.key != (float(ds.x[0]), float(ds.y[0]), ds.sizes["x"], ds.sizes["y"]):
-        raise BadScan("scan grid differs from the first scan")
     when = scan_start(key)
-    win = sampler.window(ds)
     sza = solar_zenith(lat, lon, when) if day else None
     names = ["C07", "C13"]
     lit = sza is not None and (sza[sampler.valid] < 88).mean() > 0.002
     if lit:
         names += ["C01", "C02", "C03"]
     bands = {}
-    for n in names:
-        a = sampler.warp(win[f"CMI_{n}"].values)  # fill values stay NaN for the check
+    for n, a in read_bands(key, sampler, names).items():  # fill values stay NaN for the check
         check_band(n, a, sampler.valid)
         bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[sampler.valid])))
     red_ratio = None
@@ -598,8 +659,16 @@ def main() -> None:
     slots = list_scans(start, end, args.every)
     print(f"{len(slots)} scans, lights in {time.time() - t0:.1f} s")
 
-    # Shared by the workers.
-    sampler = Sampler(open_scan(slots[0][0]), lon, lat)
+    # Shared by the workers. The grid comes from the first scan that opens.
+    sampler = None
+    for key in (k for cands in slots for k in cands):
+        try:
+            sampler = Sampler(open_scan(key), lon, lat)
+            break
+        except Exception as e:
+            print(f"  grid not read from {key.rsplit('/', 1)[-1]}: {e}", flush=True)
+    if sampler is None:
+        raise SystemExit("no scan in the window could be opened")
     geom = Geometry(lon, lat, sampler.sat_lon) if day else None
     if day:
         rayleigh()

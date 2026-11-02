@@ -91,12 +91,21 @@ The Rayleigh tables (about 60 MB) download on first use and are cached by pyspec
 
 ## Bad frames
 
-Scans sometimes arrive with a band missing (for example, the 3.9 µm band filled
-entirely with fill values), which would flash a whole frame. Each run checks for this:
+Scans sometimes arrive with a band missing, which would flash a whole frame. On
+GOES-19 we have seen the band present but empty (the 3.9 µm band all fill values, Oct
+28, 2026, 09:11 and 09:16 UTC). On GOES-16 a band has also been absent from the file
+altogether. NOAA's files drift in other ways too; the
+[log kept while indexing the GOES-16 archive](https://gist.github.com/TomNicholas/4c441c1e69ada4d2c1e0abe35262e007#file-goes_data_inconsistencies-md)
+lists them, and the checks below cover the ones that can reach a single frame:
 
-- **Per scan:** each band must cover at least 95% of the box, and the infrared median
-  must be a plausible temperature. A failed scan is swapped for the nearest good scan
-  within one step.
+- **Listing:** aborted scans (placeholder files whose start and end stamps are equal)
+  are skipped, and a scan listed twice or reprocessed keeps only its latest file.
+- **Per scan:** a band absent from the file, a file that can't be read (such as a
+  corrupted chunk), or a time inside the file more than 10 minutes from its name fails
+  the scan. Each band must cover at least 95% of the box, the infrared median must be
+  a plausible temperature, and the visible median a plausible reflectance. A failed
+  scan is swapped for the nearest good scan within one step. The grid comes from the
+  first scan that opens.
 - **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
   is dropped.
 - **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
