@@ -77,7 +77,9 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--no-hires` | Skip the 0.5 km red band detail |
 | `--fps` | Playback frames per second (default 11) |
 | `--formats` | Comma list of `mp4`, `webp`, `gif` (default `mp4`) |
-| `--max-dropped` | Share of frames that may be dropped before the run fails |
+| `--max-dropped` | Share of frames that may be dropped before the run fails (drops with a known cause don't count) |
+| `--reach N` | Steps from a frame's time to look for a good scan (default 1). Higher fills frames in a long gap by holding the nearest good scan |
+| `--c07-gaps` | `swap` (default) swaps a scan with gaps in the 3.9 µm band for a neighbor; `untinted` renders it without the low-cloud tint where the band is missing, which makes the tint blink off for that frame where there is low cloud |
 | `--start`, `--end` | UTC override for the window |
 
 Outputs in `--out`: `east_night.mp4` (plus `.webp` or `.gif` when asked), `frames/` and
@@ -102,10 +104,11 @@ lists them, and the checks below cover the ones that can reach a single frame:
   are skipped, and a scan listed twice or reprocessed keeps only its latest file.
 - **Per scan:** a band absent from the file, a file that can't be read (such as a
   corrupted chunk), or a time inside the file more than 10 minutes from its name fails
-  the scan. Each band must cover at least 95% of the box, the infrared median must be
-  a plausible temperature, and the visible median a plausible reflectance. A failed
-  scan is swapped for the nearest good scan within one step. The grid comes from the
-  first scan that opens.
+  the scan. Each band must cover at least 95% of the box,
+  the infrared median must be a plausible temperature, and the visible median a
+  plausible reflectance; the reason lists every band that fails. A failed scan is
+  swapped for the nearest good scan within `--reach` steps, and is not read again for
+  a neighboring frame. The grid comes from the first scan that opens.
 - **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
   is dropped.
 - **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
@@ -119,8 +122,9 @@ Some failures recur and have a known cause; a rejection that matches one says so
 log and carries `known_cause` in `report.json`. So far there is one: for a few weeks
 around each equinox (late March to mid April, late August to mid September), scans
 near satellite midnight (04:30 to 05:20 UTC) come in with a gap that moves through the
-scan, mostly in the 3.9 µm band, for up to 45 minutes. Those scans are rejected like
-any other; slots with no good scan within one step are left out of the loop.
+scan, in every band, for up to 45 minutes. Those scans are rejected like
+any other; frames with no good scan within `--reach` steps are left out of the loop,
+and don't count toward `--max-dropped`.
 
 ### File forms
 

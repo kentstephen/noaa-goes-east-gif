@@ -135,19 +135,20 @@ def usable_keys(keys: list[str]) -> list[str]:
     return sorted((k for _, k in latest.values()), key=lambda k: STAMPS.search(k).group(2))
 
 
-def list_scans(start: datetime, end: datetime, every_min: int) -> list[list[str]]:
+def list_scans(start: datetime, end: datetime, every_min: int, reach: int = 1) -> list[list[str]]:
     """One slot per frame time, every `every_min` minutes from `start`.
 
-    Each slot lists the scans within one step of its time, nearest first, so a bad
-    scan can be swapped for a neighbor (two bad scans in a row happen). A slot with
-    no scans (an outage) is left out.
+    Each slot lists the scans within `reach` steps of its time, nearest first, so a
+    bad scan can be swapped for a neighbor (two bad scans in a row happen). A slot
+    with no scans (an outage) is left out.
     """
     step = timedelta(minutes=every_min)
-    keys = [k for k in list_keys(PRODUCT, start - step, end + step)
-            if start - step <= scan_start(k) <= end + step]
+    span = step * reach
+    keys = [k for k in list_keys(PRODUCT, start - span, end + span)
+            if start - span <= scan_start(k) <= end + span]
     slots, t = [], start
     while t <= end:
-        near = [k for k in keys if abs(scan_start(k) - t) <= step]
+        near = [k for k in keys if abs(scan_start(k) - t) <= span]
         if near:
             slots.append(sorted(near, key=lambda k: abs(scan_start(k) - t)))
         else:
@@ -370,7 +371,7 @@ def form_runs(results: list[dict]) -> list[dict]:
     seen = []  # (scan, form, rejection reason or None)
     for r in results:
         for rej in r["rejected"]:
-            if rej.get("form"):
+            if rej.get("form") and not rej.get("repeat"):
                 seen.append((rej["scan"], rej["form"], rej["reason"]))
         if r.get("form"):
             seen.append((r["scan"], r["form"], None))
@@ -586,7 +587,7 @@ def check_band(name: str, a: np.ndarray, valid: np.ndarray) -> None:
 
 
 # Near the equinoxes, GOES-19 CONUS scans around satellite midnight (about 05:00 UTC)
-# come in with a gap that moves through the scan, mostly in C07, for up to 45
+# come in with a gap that moves through the scan, in every band, for up to 45
 # minutes. In a weekly sample from Oct 2024 to Oct 2026 every such scan fell at 04:31
 # to 05:21 UTC between Mar 26 and Apr 16 or Aug 27 and Sep 17. The windows below run
 # to the nearest sampled days without it. Likely the sun near the imager's view.
@@ -812,22 +813,42 @@ def draw_label(im: Image.Image, text: str, corner: str, aspect: float | None) ->
 
 def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampler: Sampler,
            day: bool, geom: Geometry | None, hires: HiresRed | None,
-           label: tuple[str, float | None] = ("bottom-left", None)) -> tuple[Image.Image, datetime, dict]:
+           label: tuple[str, float | None] = ("bottom-left", None),
+           c07_gaps: str = "swap") -> tuple[Image.Image, datetime, dict, list[str]]:
+    """One frame. With c07_gaps="untinted", a scan whose 3.9 um band (C07) has gaps
+    still renders: C07 only adds the low-cloud tint, so where it is missing the frame
+    has no tint and is otherwise whole. The notes say so."""
     when = scan_start(key)
     sza = solar_zenith(lat, lon, when) if day else None
     names = ["C07", "C13"]
     lit = sza is not None and (sza[sampler.valid] < 88).mean() > 0.002
     if lit:
         names += ["C01", "C02", "C03"]
-    bands = {}
+    bands, notes = {}, []
     raw, form = read_bands(key, sampler, names)
+    c07_gap = None
+    failures = []  # every band that fails, not only the first
     for n, a in raw.items():  # fill values stay NaN for the check
+        where = sampler.valid
+        if n == "C07" and c07_gaps == "untinted":
+            c07_gap = sampler.valid & ~np.isfinite(a)
+            where = sampler.valid & np.isfinite(a)  # what is there must still be plausible
+            if not where.any():
+                continue
         try:
-            check_band(n, a, sampler.valid)
+            check_band(n, a, where)
         except BadScan as e:
-            e.form = form
-            raise
-        bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[sampler.valid])))
+            failures.append(str(e))
+            continue
+        bands[n] = np.nan_to_num(a, nan=float(np.nanmedian(a[where])))
+    if failures:
+        raise BadScan("; ".join(failures), form=form)
+    if c07_gap is not None:
+        share = float(c07_gap.sum() / sampler.valid.sum())
+        if share > MAX_MISSING:
+            notes.append(f"C07 missing over {share:.0%} of the box; no low-cloud tint there")
+        # C13 in C07's place makes the 10.3 - 3.9 um difference zero: no tint.
+        bands["C07"] = np.where(np.isfinite(raw["C07"]), bands.get("C07", raw["C07"]), bands["C13"])
     red_ratio = None
     if lit and hires is not None:
         try:
@@ -839,7 +860,7 @@ def render(key: str, lights: np.ndarray, lon: np.ndarray, lat: np.ndarray, sampl
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype("uint8"))
     if label[0] != "none":
         draw_label(im, when.astimezone(EASTERN).strftime("%b %-d  %-I:%M %p %Z"), *label)
-    return im, when, form
+    return im, when, form, notes
 
 
 def write_outputs(frames_dir: Path, out: Path, formats: set[str], fps: float) -> None:
@@ -932,6 +953,12 @@ def main() -> None:
                     help="the last --hours ending now, with day and night blended")
     ap.add_argument("--hours", type=float, default=24, help="length of the --day-night loop")
     ap.add_argument("--no-hires", action="store_true", help="skip the 0.5 km red band detail")
+    ap.add_argument("--reach", type=int, default=1,
+                    help="steps from a frame's time to look for a good scan when the nearest fail")
+    ap.add_argument("--c07-gaps", choices=["swap", "untinted"], default="swap",
+                    help="a scan with gaps in the 3.9 um band: swap it for a neighbor, or "
+                         "render it without the low-cloud tint where the band is missing "
+                         "(where there is low cloud, the tint blinks off for that frame)")
     ap.add_argument("--max-dropped", type=float, default=0.1,
                     help="fail without writing videos when more than this share of frames is dropped")
     ap.add_argument("--start", help="UTC override, e.g. 2026-10-29T22:30")
@@ -984,7 +1011,7 @@ def main() -> None:
     fmt = "%b %-d %-I:%M %p %Z"
     print(f"window: {start.astimezone(EASTERN):{fmt}} to {end.astimezone(EASTERN):{fmt}}"
           f" ({(end - start).total_seconds() / 3600:.1f} h)")
-    slots = list_scans(start, end, args.every)
+    slots = list_scans(start, end, args.every, args.reach)
     print(f"{len(slots)} scans, lights in {time.time() - t0:.1f} s")
 
     # Shared by the workers. The grid comes from the first scan that opens.
@@ -1005,33 +1032,55 @@ def main() -> None:
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir()
 
-    def job(i_cands: tuple[int, list[str]]) -> dict:
-        i, cands = i_cands
-        rejected = []
-        for key in cands:
+    # Neighboring slots share candidate scans. A scan rejected for one slot is not
+    # read again for the next; the later slot lists it with "repeat".
+    rejections: dict[str, dict] = {}
+    key_locks: dict[str, threading.Lock] = {}
+    locks_lock = threading.Lock()
+
+    def try_scan(key: str):
+        with locks_lock:
+            lock = key_locks.setdefault(key, threading.Lock())
+        with lock:
+            if key in rejections:
+                return None, {**rejections[key], "repeat": True}
             try:
-                im, when, form = render(key, lights, lon, lat, sampler, day, geom, hires, label)
+                return render(key, lights, lon, lat, sampler, day, geom, hires, label,
+                              args.c07_gaps), None
             except BadScan as e:
                 rej = {"scan": key.rsplit("/", 1)[-1], "reason": str(e), "form": e.form}
                 cause = known_cause(scan_start(key), str(e))
                 if cause:
                     rej["known_cause"] = cause
+                rejections[key] = rej
+                return None, rej
+
+    def job(i_cands: tuple[int, list[str]]) -> dict:
+        i, cands = i_cands
+        rejected = []
+        for key in cands:
+            out, rej = try_scan(key)
+            if rej:
                 rejected.append(rej)
                 continue
+            im, when, form, notes = out
             path = raw_dir / f"{i:04d}.png"
             im.save(path)
             mean = float(np.asarray(im.reduce(8), dtype="float32").mean())
             return {"slot": i, "scan": key.rsplit("/", 1)[-1], "time": when.isoformat(),
-                    "path": str(path), "mean": mean, "rejected": rejected, "form": form}
+                    "path": str(path), "mean": mean, "rejected": rejected, "form": form,
+                    **({"notes": notes} if notes else {})}
         return {"slot": i, "scan": None, "rejected": rejected}
 
     results = []
     with ThreadPoolExecutor(args.workers) as pool:
         for n, r in enumerate(pool.map(job, enumerate(slots)), 1):
             results.append(r)
-            for rej in r["rejected"]:
+            for rej in (x for x in r["rejected"] if not x.get("repeat")):
                 note = f" ({rej['known_cause']})" if rej.get("known_cause") else ""
                 print(f"  rejected {rej['scan']}: {rej['reason']}{note}", flush=True)
+            for note in r.get("notes", []):
+                print(f"  rendered {r['scan']}: {note}", flush=True)
             if n % 10 == 0 or n == len(slots):
                 print(f"{n}/{len(slots)} {time.time() - t0:.0f} s", flush=True)
 
@@ -1047,6 +1096,10 @@ def main() -> None:
         print(f"  dropped {kept[j]['scan']}: brightness jump ({kept[j]['mean']:.0f})")
     final = [r for r in kept if not r.get("outlier")]
     dropped = len(slots) - len(final)
+    # A slot left empty only by rejections with a known cause does not count toward
+    # --max-dropped: the cause is understood and bounded in time.
+    known_drops = sum(1 for r in results if not r["scan"] and r["rejected"]
+                      and all(x.get("known_cause") for x in r["rejected"]))
     def slim(r: dict) -> dict:
         r = {k: v for k, v in r.items() if k != "form"}
         if r.get("rejected"):
@@ -1056,7 +1109,7 @@ def main() -> None:
     forms = form_runs(results)
     for f in forms:
         report_form(f, args.out)
-    unread = [x for r in results for x in r["rejected"] if not x.get("form")]
+    unread = [x for r in results for x in r["rejected"] if not x.get("form") and not x.get("repeat")]
     if unread:
         print(f"  {len(unread)} scan(s) could not be opened, so their form is unknown:")
         for x in unread:
@@ -1064,16 +1117,19 @@ def main() -> None:
     report = {
         "window_utc": [start.isoformat(), end.isoformat()],
         "slots": len(slots), "frames": len(final), "dropped": dropped,
+        "dropped_known_cause": known_drops,
         "swapped": [slim(r) for r in kept if r["rejected"]],
         "unfilled": [slim(r) for r in results if not r["scan"]],
         "outliers": [slim(r) for r in kept if r.get("outlier")],
+        "rendered_with_notes": [slim(r) for r in kept if r.get("notes")],
         "scan_forms": [{k: v for k, v in f.items() if k != "detail"} for f in forms],
     }
     (args.out / "report.json").write_text(json.dumps(report, indent=2))
     print(f"quality: {len(final)}/{len(slots)} frames kept, {len(report['swapped'])} swapped, "
-          f"{dropped} dropped")
-    if dropped > args.max_dropped * len(slots):
-        raise SystemExit(f"too many bad frames ({dropped}/{len(slots)}); videos not written")
+          f"{dropped} dropped ({known_drops} with a known cause)")
+    if dropped - known_drops > args.max_dropped * len(slots):
+        raise SystemExit(f"too many bad frames ({dropped - known_drops}/{len(slots)} without a "
+                         f"known cause); videos not written")
     for n, r in enumerate(final):
         shutil.copy(r["path"], frames_dir / f"{n:04d}.png")
 
