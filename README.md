@@ -77,7 +77,9 @@ uv run geocolor_night.py --bbox=-126,24,-66,49.9 --width 1920 --day-night --ever
 | `--no-hires` | Skip the 0.5 km red band detail |
 | `--fps` | Playback frames per second (default 11) |
 | `--formats` | Comma list of `mp4`, `webp`, `gif` (default `mp4`) |
-| `--max-dropped` | Share of frames that may be dropped before the run fails |
+| `--max-dropped` | Share of frames that may be dropped before the run fails (drops with a known cause don't count) |
+| `--reach N` | Steps from a frame's time to look for a good scan (default 1). Higher fills frames in a long gap by holding the nearest good scan |
+| `--c07-gaps` | `swap` (default) swaps a scan with gaps in the 3.9 µm band for a neighbor; `untinted` renders it without the low-cloud tint where the band is missing, which makes the tint blink off for that frame where there is low cloud |
 | `--start`, `--end` | UTC override for the window |
 
 Outputs in `--out`: `east_night.mp4` (plus `.webp` or `.gif` when asked), `frames/` and
@@ -102,10 +104,11 @@ lists them, and the checks below cover the ones that can reach a single frame:
   are skipped, and a scan listed twice or reprocessed keeps only its latest file.
 - **Per scan:** a band absent from the file, a file that can't be read (such as a
   corrupted chunk), or a time inside the file more than 10 minutes from its name fails
-  the scan. Each band must cover at least 95% of the box, the infrared median must be
-  a plausible temperature, and the visible median a plausible reflectance. A failed
-  scan is swapped for the nearest good scan within one step. The grid comes from the
-  first scan that opens.
+  the scan. Each band must cover at least 95% of the box,
+  the infrared median must be a plausible temperature, and the visible median a
+  plausible reflectance; the reason lists every band that fails. A failed scan is
+  swapped for the nearest good scan within `--reach` steps, and is not read again for
+  a neighboring frame. The grid comes from the first scan that opens.
 - **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
   is dropped.
 - **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
@@ -114,6 +117,14 @@ lists them, and the checks below cover the ones that can reach a single frame:
 
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
 frame, with the reason.
+
+Some failures recur and have a known cause; a rejection that matches one says so in the
+log and carries `known_cause` in `report.json`. So far there is one: for a few weeks
+around each equinox (late March to mid April, late August to mid September), scans
+near satellite midnight (04:30 to 05:20 UTC) come in with a gap that moves through the
+scan, in every band, for up to 45 minutes. Those scans are rejected like
+any other; frames with no good scan within `--reach` steps are left out of the loop,
+and don't count toward `--max-dropped`.
 
 ### File forms
 
@@ -125,7 +136,9 @@ runs of one form under `scan_forms`, each marked known or new against `forms.jso
 
 A scan in a form not in `forms.json` is reported in the log, and as an annotation on a
 GitHub Actions run (a warning when all its scans rendered, an error when some failed).
-The report says what differs from the closest known form, line by line (for example
+The closest known form is the one with the fewest differing items (variables, bands,
+attributes), so a file with one band missing is compared with its own era's form. The
+report says what differs from it, line by line (for example
 `band layouts: chunks (250, 250) -> (52, 2500) in CMI_C01-C16 (16 bands)`), which of
 its scans rendered, and why any failed. Scans that fail a check keep their form, so a
 new form that breaks reading is still reported. The new form's full description is
@@ -139,18 +152,20 @@ The run still renders, since each file is read on its own. The GOES-19 forms so 
 |---|---|---|
 | test position | 2024-10-10 to 2025-03-20 13:06 | 89.5 W checkout; no files Mar 21 to 31 while the satellite moved |
 | operational, tiles | 2025-04-01 19:31 to 2026-07-09 17:11 | 75.2 W: new grid and projection |
-| operational, strips | 2026-07-09 17:16 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles; Zlib level 1 raised to 5. GOES-18 changed on the same scan |
+| operational, strips | 2026-07-09 17:06 on | `dynamic_algorithm_input_data_container` renamed `algorithm_dynamic_input_data_container`; bands stored in full-width strips, not 250 x 250 tiles; Zlib level 1 raised to 5. GOES-18 changed on the same scan. 17:06 and 17:11 were written in both forms; the later tiles copies are the ones read |
 
 ## Daily job
 
 `.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
 evening's loop has finished. It renders two 8 second loops of that evening, with no
-time stamp burned in:
+time stamp burned in. Both are drawn by `experiments/perspective_loop.py` in near-side
+perspective (the globe seen from a camera 5,000 km above the center of the box), not
+in Web Mercator:
 
 | Name | Box | Frame |
 |---|---|---|
-| `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia) | 1400 x 882 |
-| `hero-mobile` | `-89.82,19.4,-68.5,49.99` (Great Lakes to Florida and Cuba) | 1400 x 2503 |
+| `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia), trimmed to the scan (`--fill`) and 78 rows off the top | 1400 x 864 |
+| `hero-mobile` | `-89.82,19.4,-68.5,49.99` (Great Lakes to Florida and Cuba) | 1400 x 2164 |
 
 Each uploads to a Cloudflare R2 bucket:
 
