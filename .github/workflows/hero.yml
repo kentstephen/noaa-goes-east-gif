@@ -57,7 +57,8 @@ jobs:
         if: inputs.restore == ''
         continue-on-error: true
         run: >
-          uv run --locked -q geocolor_night.py $LOOP
+          uv run --locked -q experiments/perspective_loop.py $LOOP
+          --camera-km 5000 --fill --trim-top 78
           --bbox=-113.41,23.44,-61.94,49.12
           --out out/desktop
 
@@ -66,7 +67,8 @@ jobs:
         if: inputs.restore == ''
         continue-on-error: true
         run: >
-          uv run --locked -q geocolor_night.py $LOOP
+          uv run --locked -q experiments/perspective_loop.py $LOOP
+          --camera-km 5000
           --bbox=-89.82,19.4,-68.5,49.99
           --out out/mobile
 

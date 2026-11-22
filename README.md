@@ -158,12 +158,14 @@ The run still renders, since each file is read on its own. The GOES-19 forms so 
 
 `.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
 evening's loop has finished. It renders two 8 second loops of that evening, with no
-time stamp burned in:
+time stamp burned in. Both are drawn by `experiments/perspective_loop.py` in near-side
+perspective (the globe seen from a camera 5,000 km above the center of the box), not
+in Web Mercator:
 
 | Name | Box | Frame |
 |---|---|---|
-| `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia) | 1400 x 882 |
-| `hero-mobile` | `-89.82,19.4,-68.5,49.99` (Great Lakes to Florida and Cuba) | 1400 x 2503 |
+| `hero-desktop` | `-113.41,23.44,-61.94,49.12` (Arizona to Nova Scotia), trimmed to the scan (`--fill`) and 78 rows off the top | 1400 x 864 |
+| `hero-mobile` | `-89.82,19.4,-68.5,49.99` (Great Lakes to Florida and Cuba) | 1400 x 2164 |
 
 Each uploads to a Cloudflare R2 bucket:
 

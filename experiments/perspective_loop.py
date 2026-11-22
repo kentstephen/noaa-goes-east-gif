@@ -1,7 +1,7 @@
 """A loop in near-side perspective (the globe seen from a camera above the box)
-instead of Web Mercator. An experiment: the daily job does not use this.
+instead of Web Mercator. The daily job renders both hero loops with this.
 
-    uv run experiments/perspective_loop.py --camera-km 5000 --fill \
+    uv run experiments/perspective_loop.py --camera-km 5000 --fill --trim-top 78 \
         --seconds 8 --day-seconds 2 --label none \
         --bbox=-113.41,23.44,-61.94,49.12 --out out/perspective/desktop-5000km
 
@@ -12,6 +12,8 @@ instead of Web Mercator. An experiment: the daily job does not use this.
               pixel. Without it the frame holds the whole lon/lat box, and its
               corners can pass the edge of the scan sector (black), or at low
               camera heights the horizon.
+--trim-top    rows to cut off the top of the frame, counted in output pixels after
+              --fill. Makes the frame wider in shape and keeps its south edge.
 
 Every other argument goes to geocolor_night.py unchanged. This file swaps the
 output grid and runs geocolor_night.main(); the color recipe, the scan checks and
@@ -77,6 +79,7 @@ class PerspectiveGrid:
 
     camera_m = 5_000_000.0
     fill = False
+    trim_top = 0
 
     def __init__(self, bbox: str, width: int):
         w, s, e, n = map(float, bbox.split(","))
@@ -87,6 +90,9 @@ class PerspectiveGrid:
         self._set(np.min(x), np.max(x), np.min(y), np.max(y))
         if self.fill:
             self._trim_to_scan()
+        if self.trim_top:
+            px = (self.xmax - self.xmin) / self.width
+            self._set(self.xmin, self.xmax, self.ymin, self.ymax - self.trim_top * px)
 
     def _set(self, xmin: float, xmax: float, ymin: float, ymax: float) -> None:
         self.xmin, self.xmax, self.ymin, self.ymax = xmin, xmax, ymin, ymax
@@ -149,12 +155,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--camera-km", type=float, default=5000)
     ap.add_argument("--fill", action="store_true")
+    ap.add_argument("--trim-top", type=int, default=0)
     ap.add_argument("--bbox", default=g.DEFAULT_BBOX)
     ap.add_argument("--width", type=int, default=1400)
     own, rest = ap.parse_known_args()
 
     PerspectiveGrid.camera_m = own.camera_km * 1000
     PerspectiveGrid.fill = own.fill
+    PerspectiveGrid.trim_top = own.trim_top
     g.Grid = PerspectiveGrid
     for name in ("timed_window", "night_window", "last_evening", "sunset_reaches_box"):
         setattr(g, name, time_by_the_box(getattr(g, name), own.bbox, own.width))
