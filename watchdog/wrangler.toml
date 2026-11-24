@@ -5,9 +5,10 @@ compatibility_date = "2026-10-01"
 workers_dev = false
 preview_urls = false
 
-# GitHub's schedule is 12:30 UTC and a render takes about 10 minutes. These checks
-# come after it, so on a day GitHub's schedule works they see current loops and do
-# nothing. Later checks retry a render that failed (a NOAA data gap, for example).
+# The daily render (hero.yml) has no schedule of its own: these checks are what
+# start it. The first one (13:15 UTC, 9:15 AM EDT / 8:15 AM EST) starts the day's
+# render. The later ones see current loops and do nothing, or retry a render that
+# failed (a NOAA data gap, for example).
 # The 15:15 and 18:15 checks also start the monthly upgrade (deps.yml) if it has not
 # run yet this month.
 [triggers]

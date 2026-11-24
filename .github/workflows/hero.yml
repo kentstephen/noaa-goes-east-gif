@@ -11,11 +11,13 @@
 
 name: hero loops
 
+# No schedule here. GitHub started its own schedule hours late, after the watchdog
+# Worker (watchdog/) had already rendered the evening, so every evening was rendered
+# twice. The Worker is the only trigger: it starts this job when the loops in R2 are
+# older than last evening, first at 13:15 UTC (9:15 AM EDT / 8:15 AM EST). The latest
+# a loop ends (around the June solstice) is about 11:20 UTC, so last evening's loop
+# is always finished by then.
 on:
-  schedule:
-    # 12:30 UTC is 8:30 AM EDT / 7:30 AM EST. The latest a loop ends (around the
-    # June solstice) is about 11:20 UTC, so last evening's loop is always finished.
-    - cron: "30 12 * * *"
   workflow_dispatch:
     inputs:
       restore:
@@ -36,6 +38,8 @@ jobs:
     timeout-minutes: 40
     env:
       LOOP: --seconds 8 --day-seconds 2 --workers 4 --label none
+      # Where the render keeps its last good city lights image (see the cache step).
+      CITY_LIGHTS_DIR: .lights
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +55,18 @@ jobs:
         with:
           path: ~/.local/share/pyspectral
           key: pyspectral-rayleigh-v1
+
+      # The city lights are one still image per loop, fetched from NASA's map server
+      # on every render. This keeps the last good fetch, which the render uses when
+      # the server fails. A cache is saved once per key, so the key follows the files
+      # that set the boxes; after a change to them the older copy is still restored.
+      - name: Keep the last good city lights
+        if: inputs.restore == ''
+        uses: actions/cache@v4
+        with:
+          path: .lights
+          key: city-lights-${{ hashFiles('geocolor_night.py', 'experiments/perspective_loop.py', '.github/workflows/hero.yml') }}
+          restore-keys: city-lights-
 
       - name: Render desktop
         id: desktop

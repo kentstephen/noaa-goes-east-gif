@@ -1,13 +1,15 @@
-// Starts GitHub Actions jobs when GitHub's own schedule does not.
+// Starts GitHub Actions jobs, in place of GitHub's own schedule.
 //
 // GitHub's schedule can be late, skip a day, or never start. A few times a day this
 // Worker checks two jobs and starts each one through the GitHub API (a manual
 // dispatch, which GitHub runs right away) only if it is due:
 //
 // - Daily render (hero.yml): due when either hero loop in R2 has an `evening` older
-//   than last evening and no render is already queued or running.
+//   than last evening and no render is already queued or running. That workflow has
+//   no schedule, so this is the only thing that starts it.
 // - Monthly dependency upgrade (deps.yml): due when it has no run at all this month
-//   (UTC). Checked only from 15:00 UTC on, clear of the daily render. A failed
+//   (UTC). It has no schedule either. Checked only from 15:00 UTC on, clear of the
+//   daily render. A failed
 //   upgrade still counts as this month's run, so it is not retried.
 //
 // - Stale-loop alert (alert.yml): when either loop is ALERT_DAYS or more evenings

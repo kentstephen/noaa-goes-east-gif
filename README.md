@@ -112,7 +112,7 @@ lists them, and the checks below cover the ones that can reach a single frame:
 - **Per frame:** a frame whose mean brightness jumps more than 25% from its neighbors
   is dropped.
 - **Per run:** if more than `--max-dropped` (default 10%) of the frames are dropped, the
-  run exits with an error and writes no videos, so a scheduled job keeps the last good
+  run exits with an error and writes no videos, so the daily job keeps the last good
   loop.
 
 `report.json` in the output folder lists every swapped scan, empty slot and dropped
@@ -156,8 +156,9 @@ The run still renders, since each file is read on its own. The GOES-19 forms so 
 
 ## Daily job
 
-`.github/workflows/hero.yml` runs every day at 12:30 UTC, after the previous
-evening's loop has finished. It renders two 8 second loops of that evening, with no
+`.github/workflows/hero.yml` runs every day at 13:15 UTC, after the previous
+evening's loop has finished. It has no schedule of its own; the Worker in
+`watchdog/` starts it (see [Trigger](#trigger)). It renders two 8 second loops of that evening, with no
 time stamp burned in. Both are drawn by `experiments/perspective_loop.py` in near-side
 perspective (the globe seen from a camera 5,000 km above the center of the box), not
 in Web Mercator:
@@ -185,16 +186,17 @@ gh workflow run hero.yml -f restore=2026-10-29
 Repo settings: secrets `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`,
 and the variable `R2_BUCKET`.
 
-### Backup trigger
+### Trigger
 
-GitHub's schedule can be late, skip a day, or not start at all. `watchdog/` is a
-Cloudflare Worker that checks the `evening` metadata on the current loops in R2 at
-13:15, 15:15 and 18:15 UTC. If either loop is older than last evening and no render
-is queued or running, it starts `hero.yml` through the GitHub API. At 15:15 and
+GitHub's own schedule started this job hours late (often 7 to 12 hours), skipped
+days, or did not start at all, so neither this job nor the monthly upgrade is on it. `watchdog/` is a Cloudflare
+Worker that checks the `evening` metadata on the current loops in R2 at 13:15, 15:15
+and 18:15 UTC. If either loop is older than last evening and no render is queued or
+running, it starts `hero.yml` through the GitHub API. The first check starts the
+day's render; the later ones do nothing unless that render failed. At 15:15 and
 18:15 UTC it also starts the monthly upgrade (`deps.yml`) if that has no run yet this
 month; a failed upgrade counts as this month's run and is not retried. If GitHub has
-disabled either workflow for inactivity, it re-enables it first. On days the
-schedule works, it does nothing.
+disabled either workflow, it re-enables it first.
 
 If either loop is two or more evenings behind at the 18:15 UTC check, it starts
 `alert.yml`, which opens a "Hero loop is stale" issue as github-actions[bot] (GitHub
@@ -210,8 +212,13 @@ see its runs with `npx wrangler tail`.
 
 The published loop is replaced only after a run succeeds. If a run fails for any
 reason (too many bad frames, missing scans, a network error), it writes no video and
-the scheduled job leaves the published file alone, so the last good loop keeps
+the daily job leaves the published file alone, so the last good loop keeps
 playing until a later run succeeds.
+
+One outside failure does not fail a run: the city lights. They are a single still
+image (Black Marble 2016) fetched from NASA's GIBS map server on every render. The
+daily job keeps the last good fetch for each loop in the Actions cache, and when the
+server fails, the render uses that copy and puts a warning on the run.
 
 ## Notes
 

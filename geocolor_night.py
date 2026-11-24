@@ -93,8 +93,30 @@ class Grid:
             f"&BBOX={box}&WIDTH={self.width}&HEIGHT={self.height}"
             "&FORMAT=image/png&TIME=2016-01-01"
         )
-        with urllib.request.urlopen(url, timeout=120) as r:
-            im = Image.open(io.BytesIO(r.read())).convert("RGB")
+        # The image is the same every day, so when the map server fails, the copy kept
+        # from the last good fetch of this box stands in. Kept only where
+        # CITY_LIGHTS_DIR is set (the daily job).
+        keep = os.environ.get("CITY_LIGHTS_DIR")
+        kept = Path(keep) / f"{box.replace(',', '_')}_{self.width}x{self.height}.png" if keep else None
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                data = r.read()
+            try:
+                im = Image.open(io.BytesIO(data)).convert("RGB")
+            except Exception:
+                # The server answers 200 with an HTML message when it has an error.
+                said = " ".join(re.sub(r"<[^>]+>", " ", data[:500].decode("utf-8", "replace")).split())
+                raise RuntimeError(f"the map server sent no image: {said}") from None
+        except Exception as e:
+            why = describe_error(e)
+            if not (kept and kept.exists()):
+                raise SystemExit(f"city lights: {why}; no kept copy of this box to use ({url})")
+            _annotate("warning", "City lights came from the kept copy", [why, f"Used {kept}."])
+            im = Image.open(kept).convert("RGB")
+        else:
+            if kept:
+                kept.parent.mkdir(parents=True, exist_ok=True)
+                kept.write_bytes(data)
         return np.asarray(im, dtype="float32") / 255
 
 
