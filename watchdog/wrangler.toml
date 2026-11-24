@@ -6,13 +6,13 @@ workers_dev = false
 preview_urls = false
 
 # The daily render (hero.yml) has no schedule of its own: these checks are what
-# start it. The first one (13:15 UTC, 9:15 AM EDT / 8:15 AM EST) starts the day's
+# start it. The first one (12:30 UTC, 8:30 AM EDT / 7:30 AM EST) starts the day's
 # render. The later ones see current loops and do nothing, or retry a render that
 # failed (a NOAA data gap, for example).
 # The 15:15 and 18:15 checks also start the monthly upgrade (deps.yml) if it has not
 # run yet this month.
 [triggers]
-crons = ["15 13 * * *", "15 15 * * *", "15 18 * * *"]
+crons = ["30 12 * * *", "15 15 * * *", "15 18 * * *"]
 
 [[r2_buckets]]
 binding = "BUCKET"

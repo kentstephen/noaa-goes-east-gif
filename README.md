@@ -157,7 +157,7 @@ The run still renders, since each file is read on its own. The GOES-19 forms so 
 
 ## Daily job
 
-`.github/workflows/hero.yml` runs every day at 13:15 UTC, after the previous
+`.github/workflows/hero.yml` runs every day at 12:30 UTC (8:30 AM EDT / 7:30 AM EST), after the previous
 evening's loop has finished. It has no schedule of its own; the Worker in
 `watchdog/` starts it (see [Trigger](#trigger)). It renders two 8 second loops of that evening, with no
 time stamp burned in. Both are drawn by `experiments/perspective_loop.py` in near-side
@@ -191,7 +191,7 @@ and the variable `R2_BUCKET`.
 
 GitHub's own schedule started this job hours late (often 7 to 12 hours), skipped
 days, or did not start at all, so neither this job nor the monthly upgrade is on it. `watchdog/` is a Cloudflare
-Worker that checks the `evening` metadata on the current loops in R2 at 13:15, 15:15
+Worker that checks the `evening` metadata on the current loops in R2 at 12:30, 15:15
 and 18:15 UTC. If either loop is older than last evening and no render is queued or
 running, it starts `hero.yml` through the GitHub API. The first check starts the
 day's render; the later ones do nothing unless that render failed. At 15:15 and

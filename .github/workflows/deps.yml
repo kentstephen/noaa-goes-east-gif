@@ -17,7 +17,7 @@ name: dependency upgrade
 # No schedule here: GitHub's own schedule started this late or not at all, and then
 # ran it a second time after the watchdog Worker (watchdog/) had. The Worker is the
 # only trigger. It starts this job at 15:15 UTC (11:15 AM EDT / 10:15 AM EST) on the
-# first day of a month that has no run yet, clear of the 13:15 UTC daily render.
+# first day of a month that has no run yet, clear of the 12:30 UTC daily render.
 on:
   workflow_dispatch:
 
