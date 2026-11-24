@@ -57,15 +57,15 @@ jobs:
           key: pyspectral-rayleigh-v1
 
       # The city lights are one still image per loop, fetched from NASA's map server
-      # on every render. This keeps the last good fetch, which the render uses when
-      # the server fails. A cache is saved once per key, so the key follows the files
-      # that set the boxes; after a change to them the older copy is still restored.
-      - name: Keep the last good city lights
+      # on every render. The render keeps each good fetch in .lights and uses that
+      # copy when the server fails. The newest saved copy is restored here and the
+      # folder is saved again after the renders (below).
+      - name: Restore the last good city lights
         if: inputs.restore == ''
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .lights
-          key: city-lights-${{ hashFiles('geocolor_night.py', 'experiments/perspective_loop.py', '.github/workflows/hero.yml') }}
+          key: city-lights-${{ github.run_id }}
           restore-keys: city-lights-
 
       - name: Render desktop
@@ -87,6 +87,16 @@ jobs:
           --camera-km 5000
           --bbox=-89.82,19.4,-68.5,49.99
           --out out/mobile
+
+      # Saved even when a loop failed, so one loop's good fetch is kept on a day the
+      # other's failed. A cache cannot be overwritten, so each run saves under its
+      # own key; GitHub deletes the ones not read for 7 days.
+      - name: Save the city lights
+        if: always() && inputs.restore == '' && hashFiles('.lights/*.png') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .lights
+          key: city-lights-${{ github.run_id }}
 
       - name: Make poster frames
         if: inputs.restore == ''
