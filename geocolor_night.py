@@ -98,25 +98,35 @@ class Grid:
         # CITY_LIGHTS_DIR is set (the daily job).
         keep = os.environ.get("CITY_LIGHTS_DIR")
         kept = Path(keep) / f"{box.replace(',', '_')}_{self.width}x{self.height}.png" if keep else None
-        try:
-            with urllib.request.urlopen(url, timeout=120) as r:
-                data = r.read()
+        # With no kept copy the fetch is the only source, so it is tried several times:
+        # the server has answered most requests with an error and some with the image
+        # within the same minute.
+        tries = 1 if kept and kept.exists() else 10
+        for n in range(1, tries + 1):
             try:
-                im = Image.open(io.BytesIO(data)).convert("RGB")
-            except Exception:
-                # The server answers 200 with an HTML message when it has an error.
-                said = " ".join(re.sub(r"<[^>]+>", " ", data[:500].decode("utf-8", "replace")).split())
-                raise RuntimeError(f"the map server sent no image: {said}") from None
-        except Exception as e:
-            why = describe_error(e)
-            if not (kept and kept.exists()):
-                raise SystemExit(f"city lights: {why}; no kept copy of this box to use ({url})")
-            _annotate("warning", "City lights came from the kept copy", [why, f"Used {kept}."])
-            im = Image.open(kept).convert("RGB")
+                with urllib.request.urlopen(url, timeout=120) as r:
+                    data = r.read()
+                try:
+                    im = Image.open(io.BytesIO(data)).convert("RGB")
+                except Exception:
+                    # The server answers 200 with an HTML message when it has an error.
+                    said = " ".join(re.sub(r"<[^>]+>", " ", data[:500].decode("utf-8", "replace")).split())
+                    raise RuntimeError(f"the map server sent no image: {said}") from None
+                break
+            except Exception as e:
+                why = describe_error(e)
+                if n < tries:
+                    print(f"  city lights, try {n} of {tries}: {why}", flush=True)
+                    time.sleep(5)
         else:
-            if kept:
-                kept.parent.mkdir(parents=True, exist_ok=True)
-                kept.write_bytes(data)
+            if not (kept and kept.exists()):
+                raise SystemExit(f"city lights: {why}; {tries} tries and no kept copy of this box "
+                                 f"to use ({url})")
+            _annotate("warning", "City lights came from the kept copy", [why, f"Used {kept}."])
+            return np.asarray(Image.open(kept).convert("RGB"), dtype="float32") / 255
+        if kept:
+            kept.parent.mkdir(parents=True, exist_ok=True)
+            kept.write_bytes(data)
         return np.asarray(im, dtype="float32") / 255
 
 

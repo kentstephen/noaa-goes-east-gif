@@ -219,7 +219,8 @@ playing until a later run succeeds.
 One outside failure does not fail a run: the city lights. They are a single still
 image (Black Marble 2016) fetched from NASA's GIBS map server on every render. The
 daily job keeps the last good fetch for each loop in the Actions cache, and when the
-server fails, the render uses that copy and puts a warning on the run.
+server fails, the render uses that copy and puts a warning on the run. Before a loop has a kept
+copy, the fetch is tried up to 10 times, 5 seconds apart.
 
 ## Notes
 
